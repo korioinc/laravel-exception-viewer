@@ -22,6 +22,8 @@ use Throwable;
 
 class ExceptionViewerServiceProvider extends PackageServiceProvider
 {
+    private const INSTALL_TAG = 'exception-viewer-install';
+
     public function configurePackage(Package $package): void
     {
         $package
@@ -51,6 +53,16 @@ class ExceptionViewerServiceProvider extends PackageServiceProvider
 
     public function packageBooted()
     {
+        if ($this->app->runningInConsole()) {
+            $this->publishes(
+                array_merge(
+                    static::pathsToPublish(static::class, 'exception-viewer-config'),
+                    static::pathsToPublish(static::class, 'exception-viewer-migrations'),
+                ),
+                self::INSTALL_TAG,
+            );
+        }
+
         Queue::before(function (JobProcessing $event): void {
             $this->app->make(QueueContextStore::class)->capture($event->job);
         });

@@ -29,12 +29,17 @@ composer require korioinc/laravel-exception-viewer
 
 Laravel auto-discovers the package service provider, so no manual provider registration is required.
 
-Publish everything in one shot:
+Publish the default install set in one shot:
 
 ```bash
-php artisan vendor:publish --provider="Korioinc\ExceptionViewer\ExceptionViewerServiceProvider"
+php artisan vendor:publish --tag="exception-viewer-install"
 php artisan migrate
 ```
+
+This publishes:
+
+- config
+- migrations
 
 Or publish only what you need:
 
@@ -49,6 +54,12 @@ php artisan vendor:publish --tag="exception-viewer-config"
 
 ```bash
 php artisan vendor:publish --tag="exception-viewer-views"
+```
+
+If you explicitly want every publishable artifact registered by the provider, including views, you can still use:
+
+```bash
+php artisan vendor:publish --provider="Korioinc\ExceptionViewer\ExceptionViewerServiceProvider"
 ```
 
 Published views are placed at:
