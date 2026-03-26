@@ -21,6 +21,8 @@ class ExceptionViewerIndexController
         $selectedGroup = (string) $request->query('group', 'all');
         $currentSort = $this->resolveSort((string) $request->query('sort', 'newest'));
         $connection = $this->databaseConnection($database);
+        /** @var view-string $view */
+        $view = 'exception-viewer::pages.index';
 
         $groups = $connection
             ->table(self::TABLE)
@@ -47,7 +49,7 @@ class ExceptionViewerIndexController
                 ];
             });
 
-        return view('exception-viewer::pages.index', [
+        return view($view, [
             'selectedGroup' => $selectedGroup,
             'searchQuery' => '',
             'currentSort' => $currentSort,
