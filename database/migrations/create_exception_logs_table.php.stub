@@ -1,0 +1,40 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::connection($this->connectionName())->create('exception_logs', function (Blueprint $table) {
+            $table->id();
+            $table->string('key')->unique();
+            $table->string('name');
+            $table->text('message');
+            $table->text('file');
+            $table->unsignedInteger('line');
+            $table->longText('raw_exception');
+            $table->string('request_method')->nullable();
+            $table->text('request_endpoint')->nullable();
+            $table->json('request_headers')->nullable();
+            $table->json('request_payload')->nullable();
+            $table->unsignedBigInteger('count')->default(1);
+            $table->timestamp('latest_at');
+            $table->timestamps();
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::connection($this->connectionName())->dropIfExists('exception_logs');
+    }
+
+    private function connectionName(): ?string
+    {
+        $connection = config('exception-viewer.database_connection');
+
+        return $connection === '' ? null : $connection;
+    }
+};

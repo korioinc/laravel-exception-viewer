@@ -1,0 +1,15 @@
+pre-commit:
+  commands:
+    pint:
+      glob:
+        - "*.php"
+        - "**/*.php"
+      run: composer format
+      stage_fixed: true
+
+pre-push:
+  commands:
+    analyse:
+      run: composer analyse
+    test:
+      run: composer test
