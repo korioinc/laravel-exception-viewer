@@ -3,15 +3,13 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Review grouped Laravel exception logs and copy markdown context for investigation.">
     <meta name="exception-viewer-assets-path" content="{{ $assetsPathUrl }}">
     <title>Exception Viewer</title>
     @php
-        $faviconSvg = rawurlencode('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="18" fill="#e0f2fe"/><path d="M20 12h18l10 10v30a4 4 0 0 1-4 4H20a4 4 0 0 1-4-4V16a4 4 0 0 1 4-4Z" fill="#ffffff" stroke="#0f172a" stroke-width="3"/><path d="M38 12v12h12" fill="#dbeafe" stroke="#0f172a" stroke-width="3"/><path d="M24 32h16M24 40h16" stroke="#0ea5e9" stroke-width="4" stroke-linecap="round"/></svg>');
+        $faviconSvg = rawurlencode('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="#f8fafc"/><path d="M19 10h18l8 8v34a4 4 0 0 1-4 4H19a4 4 0 0 1-4-4V14a4 4 0 0 1 4-4Z" fill="#ffffff" stroke="#0f172a" stroke-width="3"/><path d="M37 10v10h10" fill="#e2e8f0" stroke="#0f172a" stroke-width="3"/><path d="M23 31h18M23 40h13" stroke="#0284c7" stroke-width="4" stroke-linecap="round"/></svg>');
     @endphp
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,{{ $faviconSvg }}">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         html,
@@ -22,7 +20,7 @@
 
         html {
             color-scheme: light;
-            font-family: 'Geist', ui-sans-serif, system-ui, sans-serif;
+            font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         }
 
         summary::-webkit-details-marker {
@@ -35,79 +33,105 @@
         }
 
         ::-webkit-scrollbar-thumb {
-            background-color: rgba(148, 163, 184, 0.8);
+            background-color: rgba(148, 163, 184, 0.78);
             border: 2px solid transparent;
             border-radius: 9999px;
             background-clip: padding-box;
         }
+
+        [data-source-nav] {
+            cursor: grab;
+            overscroll-behavior-inline: contain;
+            user-select: none;
+        }
+
+        [data-source-nav].is-dragging {
+            cursor: grabbing;
+            scroll-behavior: auto;
+        }
+
+        [data-source-nav] a {
+            -webkit-user-drag: none;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            *,
+            *::before,
+            *::after {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                scroll-behavior: auto !important;
+                transition-duration: 0.01ms !important;
+            }
+        }
     </style>
 </head>
-<body class="h-full overflow-hidden bg-slate-100 text-slate-900 antialiased" data-assets-path="{{ $assetsPathUrl }}">
+<body class="h-full overflow-hidden bg-slate-50 text-slate-900 antialiased" data-assets-path="{{ $assetsPathUrl }}">
     @php
-        $persistentFilters = array_filter([
-            'sort' => $currentSort !== 'newest' ? $currentSort : null,
-        ], static fn (mixed $value): bool => $value !== null && $value !== '');
         $environment = (string) app()->environment();
         $environmentLabel = strtoupper($environment);
         $environmentTone = match ($environment) {
             'local' => 'border-emerald-200 bg-emerald-50 text-emerald-700',
             'staging' => 'border-amber-200 bg-amber-50 text-amber-700',
             'production' => 'border-rose-200 bg-rose-50 text-rose-700',
-            default => 'border-slate-200 bg-slate-100 text-slate-600',
+            default => 'border-slate-200 bg-slate-50 text-slate-600',
         };
+        $selectedSourceLabel = $selectedSource === null
+            ? 'Local App'
+            : ($sources->firstWhere('key', $selectedSource)['label'] ?? $selectedSource);
+        $selectedSourceIsLocal = $selectedSource === $localSourceKey;
+        $exportFilters = array_filter([
+            'source' => $selectedSourceIsLocal ? null : $selectedSource,
+        ], static fn (mixed $value): bool => $value !== null && $value !== '');
     @endphp
 
-    <div class="relative isolate h-full overflow-hidden bg-slate-100">
-        <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.10),transparent_28%),radial-gradient(circle_at_bottom_right,rgba(59,130,246,0.08),transparent_24%),linear-gradient(to_bottom,rgba(248,250,252,0.92),rgba(241,245,249,0.96))]"></div>
-
-        <div class="mx-auto box-border h-full w-full max-w-[1760px] px-3 py-3 sm:px-5 sm:py-5">
-            <main class="grid h-full overflow-hidden rounded-[28px] border border-slate-200/80 bg-white/85 shadow-[0_28px_90px_rgba(148,163,184,0.18)] backdrop-blur lg:grid-cols-[18rem,minmax(0,1fr)]">
-                <aside class="flex min-h-0 flex-col border-b border-slate-200 bg-slate-50/85 lg:border-b-0 lg:border-r">
-                    <div class="flex h-16 items-center border-b border-slate-200 px-4 sm:px-5">
-                        <div class="flex min-w-0 flex-nowrap items-center gap-3">
-                            <div class="h-2.5 w-2.5 rounded-full bg-sky-500"></div>
-                            <h1 class="truncate text-base font-semibold text-slate-900">Exception Viewer</h1>
-                            <span class="inline-flex shrink-0 whitespace-nowrap rounded-full border px-1.5 py-[3px] text-[8px] font-semibold uppercase tracking-[0.06em] sm:px-1.5 sm:text-[9px] {{ $environmentTone }}">{{ $environmentLabel }}</span>
-                        </div>
-                    </div>
-
-                    <div class="flex items-center justify-between px-4 py-3 text-[11px] uppercase tracking-[0.24em] text-slate-500 sm:px-5">
-                        <span>Group</span>
-                        <span class="tabular-nums">{{ $groups->count() + 1 }}</span>
-                    </div>
-
-                    <nav class="min-h-0 flex-1 space-y-1 overflow-y-auto px-3 pb-3 sm:px-4">
-                        <a
-                            href="{{ route('exception-viewer.index', $persistentFilters) }}"
-                            class="{{ $selectedGroup === 'all' ? 'border-sky-200 bg-white text-slate-900 shadow-sm shadow-sky-100/80' : 'border-transparent bg-transparent text-slate-600 hover:border-slate-200 hover:bg-white/90 hover:text-slate-900' }} flex items-center justify-between rounded-xl border px-3 py-3 transition"
-                        >
-                            <span class="truncate text-sm font-medium">All</span>
-                            <span class="tabular-nums rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-500">{{ $totalRows }}</span>
-                        </a>
-
-                        @foreach ($groups as $group)
-                            <a
-                                href="{{ route('exception-viewer.index', ['group' => $group['name']] + $persistentFilters) }}"
-                                class="{{ $selectedGroup === $group['name'] ? 'border-sky-200 bg-white text-slate-900 shadow-sm shadow-sky-100/80' : 'border-transparent bg-transparent text-slate-600 hover:border-slate-200 hover:bg-white/90 hover:text-slate-900' }} flex items-center justify-between rounded-xl border px-3 py-3 transition"
-                            >
-                                <span class="truncate pr-3 text-sm font-medium">{{ $group['name'] }}</span>
-                                <span class="tabular-nums rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-500">{{ $group['row_count'] }}</span>
-                            </a>
-                        @endforeach
-                    </nav>
-                </aside>
-
-                <section class="flex min-h-0 min-w-0 flex-col bg-white/55">
-                    <div class="flex flex-col gap-3 border-b border-slate-200 px-4 py-3 sm:px-6">
-                        <div class="flex items-center justify-between">
-                            <div class="flex min-w-0 items-center gap-3">
-                                <p class="truncate text-sm font-medium text-slate-900">
-                                    {{ $selectedGroup === 'all' ? 'All' : $selectedGroup }}
-                                </p>
-                                <span class="tabular-nums rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-500">
-                                    {{ $exceptions->count() }}
-                                </span>
+    <div class="h-full overflow-hidden p-2 sm:p-4">
+        <main class="mx-auto flex h-full max-w-[1720px] overflow-hidden rounded-xl border border-slate-200 bg-slate-50 shadow-[0_18px_45px_rgba(15,23,42,0.08)]">
+            <section class="flex min-h-0 min-w-0 flex-1 flex-col">
+                <header class="border-b border-slate-200 bg-white">
+                    <div class="flex flex-col gap-4 px-4 py-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
+                        <div class="min-w-0">
+                            <div class="flex min-w-0 flex-wrap items-center gap-2.5">
+                                <h1 class="truncate text-lg font-semibold leading-7 text-slate-950 sm:text-xl">Exception Viewer</h1>
+                                <span class="inline-flex h-7 shrink-0 items-center rounded-md border px-2 text-[11px] font-medium tabular-nums {{ $environmentTone }}">{{ $environmentLabel }}</span>
                             </div>
+                        </div>
+
+                        <div class="flex shrink-0 flex-wrap items-center gap-2">
+                            <form method="GET" action="{{ route('exception-viewer.index') }}" class="flex items-center gap-2">
+                                @if ($selectedSource !== null && ! $selectedSourceIsLocal)
+                                    <input type="hidden" name="source" value="{{ $selectedSource }}">
+                                @endif
+
+                                <button
+                                    type="button"
+                                    data-copy-label="Copy source export link"
+                                    onclick="copyButtonText(event, '{{ base64_encode(route('exception-viewer.all', $exportFilters)) }}')"
+                                    class="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 transition-colors hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 disabled:cursor-not-allowed disabled:opacity-70"
+                                    aria-label="Copy source export link"
+                                    title="Copy source export link"
+                                >
+                                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 7.5V6a2.25 2.25 0 0 1 2.25-2.25h6L21 8.25v9.75A2.25 2.25 0 0 1 18.75 20.25H15" />
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 3.75V8.25H21" />
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M3 9.75A2.25 2.25 0 0 1 5.25 7.5h6a2.25 2.25 0 0 1 2.25 2.25v8.25a2.25 2.25 0 0 1-2.25 2.25h-6A2.25 2.25 0 0 1 3 18V9.75Z" />
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 12.75h3M6.75 15.75h3.75" />
+                                    </svg>
+                                    <span class="sr-only">Copy source export link</span>
+                                </button>
+
+                                <label class="sr-only" for="viewer-sort">Sort exceptions</label>
+                                <select
+                                    id="viewer-sort"
+                                    name="sort"
+                                    onchange="this.form.requestSubmit()"
+                                    class="h-9 min-w-28 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+                                >
+                                    <option value="newest" @selected($currentSort === 'newest')>Newest</option>
+                                    <option value="count" @selected($currentSort === 'count')>Count</option>
+                                    <option value="oldest" @selected($currentSort === 'oldest')>Oldest</option>
+                                </select>
+                            </form>
 
                             <form
                                 method="POST"
@@ -118,7 +142,7 @@
                                 <input type="hidden" name="redirect_to" value="{{ request()->getRequestUri() }}">
                                 <button
                                     type="submit"
-                                    class="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-rose-200 bg-rose-50 text-rose-600 transition hover:border-rose-300 hover:bg-rose-100 hover:text-rose-700"
+                                    class="inline-flex h-9 w-9 items-center justify-center rounded-md border border-rose-200 bg-white text-rose-600 transition-colors hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-500"
                                     aria-label="Delete all exception logs"
                                     title="Delete all exception logs"
                                 >
@@ -128,91 +152,83 @@
                                 </button>
                             </form>
                         </div>
-
-                        <form method="GET" action="{{ route('exception-viewer.index') }}" class="flex flex-wrap justify-end gap-3">
-                            @if ($selectedGroup !== 'all')
-                                <input type="hidden" name="group" value="{{ $selectedGroup }}">
-                            @endif
-
-                            <button
-                                type="button"
-                                data-copy-label="Copy all exception export link"
-                                onclick="copyButtonText(event, '{{ base64_encode(route('exception-viewer.all')) }}')"
-                                class="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 transition hover:border-sky-200 hover:text-sky-700"
-                                aria-label="Copy all exception export link"
-                                title="Copy all exception export link"
-                            >
-                                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 7.5V6a2.25 2.25 0 0 1 2.25-2.25h6L21 8.25v9.75A2.25 2.25 0 0 1 18.75 20.25H15" />
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 3.75V8.25H21" />
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 9.75A2.25 2.25 0 0 1 5.25 7.5h6a2.25 2.25 0 0 1 2.25 2.25v8.25a2.25 2.25 0 0 1-2.25 2.25h-6A2.25 2.25 0 0 1 3 18V9.75Z" />
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 12.75h3M6.75 15.75h3.75" />
-                                </svg>
-                                <span class="sr-only">Copy all exception export link</span>
-                            </button>
-
-                            <label class="sr-only" for="viewer-sort">Sort exceptions</label>
-                            <select
-                                id="viewer-sort"
-                                name="sort"
-                                onchange="this.form.requestSubmit()"
-                                class="h-11 rounded-xl border border-slate-200 bg-white px-4 text-sm text-slate-700 outline-none transition focus:border-sky-300"
-                            >
-                                <option value="newest" @selected($currentSort === 'newest')>Newest</option>
-                                <option value="count" @selected($currentSort === 'count')>Count</option>
-                                <option value="oldest" @selected($currentSort === 'oldest')>Oldest</option>
-                            </select>
-                        </form>
                     </div>
 
-                    @if ($exceptions->isEmpty())
-                        <div class="flex flex-1 items-center justify-center px-6">
-                            <p class="text-sm text-slate-500">No entries.</p>
+                    @if ($sources->isNotEmpty())
+                        <nav class="flex max-w-full gap-5 overflow-x-auto border-t border-slate-100 px-4 sm:px-6" aria-label="Exception sources" data-source-nav>
+                            @foreach ($sources as $source)
+                                @php
+                                    $sourceFilters = array_filter([
+                                        'source' => $source['is_local'] ? null : $source['key'],
+                                        'sort' => $currentSort !== 'newest' ? $currentSort : null,
+                                    ], static fn (mixed $value): bool => $value !== null && $value !== '');
+                                @endphp
+                                <a
+                                    href="{{ route('exception-viewer.index', $sourceFilters) }}"
+                                    class="{{ $selectedSource === $source['key'] ? 'border-slate-950 text-slate-950' : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-800' }} inline-flex h-11 shrink-0 items-center gap-2 border-b-2 text-sm font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-sky-500"
+                                    aria-current="{{ $selectedSource === $source['key'] ? 'page' : 'false' }}"
+                                >
+                                    <span>{{ $source['label'] }}</span>
+                                    <span class="{{ $selectedSource === $source['key'] ? 'border-slate-300 bg-slate-100 text-slate-700' : 'border-slate-200 bg-white text-slate-500' }} inline-flex min-w-6 items-center justify-center rounded-md border px-1.5 py-0.5 text-xs tabular-nums">{{ number_format($source['row_count']) }}</span>
+                                </a>
+                            @endforeach
+                        </nav>
+                    @endif
+                </header>
+
+                @if ($exceptions->isEmpty())
+                    <div class="flex flex-1 items-center justify-center bg-slate-50 px-6 py-12">
+                        <div class="max-w-sm rounded-lg border border-slate-200 bg-white px-6 py-5 text-center shadow-sm">
+                            <p class="text-base font-semibold text-slate-900">No exception logs found.</p>
+                            <p class="mt-2 text-sm leading-6 text-slate-500">{{ $selectedSourceLabel }} has no recorded exceptions yet.</p>
                         </div>
-                    @else
-                        <div class="hidden border-b border-slate-200 px-4 py-3 text-[11px] uppercase tracking-[0.24em] text-slate-500 lg:grid lg:grid-cols-[7.5rem,minmax(0,1fr),9rem,4.5rem,4rem,4rem] lg:gap-4 lg:px-6">
-                            <span>Key</span>
-                            <span>Name</span>
-                            <span class="text-right">Date</span>
-                            <span class="text-center">Count</span>
-                            <span class="text-center">Copy</span>
-                            <span class="text-center">Link</span>
-                        </div>
+                    </div>
+                @else
+                    <div class="hidden border-b border-slate-200 bg-slate-50/90 px-4 py-2 text-xs font-medium text-slate-500 lg:grid lg:grid-cols-[8rem,minmax(0,1fr),11rem,4.5rem,3rem,3rem] lg:gap-4 lg:px-6">
+                        <span>Key</span>
+                        <span>Name</span>
+                        <span class="text-right">Date</span>
+                        <span class="text-center">Count</span>
+                        <span class="text-center">Copy</span>
+                        <span class="text-center">Link</span>
+                    </div>
 
-                        <div class="min-h-0 flex-1 overflow-y-auto">
-                            @foreach ($exceptions as $exception)
-                                <details id="{{ $exception['dom_id'] }}" class="group border-b border-slate-200/90 last:border-b-0">
-                                    <summary class="list-none cursor-pointer px-4 py-4 transition hover:bg-slate-50 sm:px-6">
-                                        <div class="grid gap-3 lg:grid-cols-[7.5rem,minmax(0,1fr),9rem,4.5rem,4rem,4rem] lg:items-center lg:gap-4">
-                                            <div class="flex items-center gap-3">
-                                                <svg class="h-4 w-4 shrink-0 text-slate-400 transition group-open:rotate-90 group-open:text-sky-600" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                                                    <path fill-rule="evenodd" d="M7.28 4.97a.75.75 0 0 1 1.06.03l4.25 4.5a.75.75 0 0 1 0 1.03l-4.25 4.5a.75.75 0 1 1-1.09-1.02l3.76-3.98-3.76-3.98a.75.75 0 0 1 .03-1.08Z" clip-rule="evenodd" />
-                                                </svg>
-                                                <span class="tabular-nums inline-flex rounded-md border border-slate-200 bg-white px-2.5 py-1 font-mono text-xs font-medium tracking-[0.2em] text-sky-700">
-                                                    {{ $exception['short_key'] }}
-                                                </span>
-                                            </div>
+                    <div class="min-h-0 flex-1 overflow-x-hidden overflow-y-auto bg-slate-50">
+                        @foreach ($exceptions as $exception)
+                            <details id="{{ $exception['dom_id'] }}" class="group min-w-0 border-b border-slate-100 bg-white last:border-b-0">
+                                <summary class="list-none cursor-pointer px-4 py-3 transition-colors hover:bg-slate-50 group-open:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-sky-500 sm:px-6">
+                                    <div class="grid gap-3 lg:grid-cols-[8rem,minmax(0,1fr),11rem,4.5rem,3rem,3rem] lg:items-center lg:gap-4">
+                                        <div class="flex items-center gap-2">
+                                            <svg class="h-4 w-4 shrink-0 text-slate-400 transition-transform group-open:rotate-90 group-open:text-sky-700 motion-reduce:transition-none" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                                <path fill-rule="evenodd" d="M7.28 4.97a.75.75 0 0 1 1.06.03l4.25 4.5a.75.75 0 0 1 0 1.03l-4.25 4.5a.75.75 0 1 1-1.09-1.02l3.76-3.98-3.76-3.98a.75.75 0 0 1 .03-1.08Z" clip-rule="evenodd" />
+                                            </svg>
+                                            <span class="rounded-md border border-slate-200 bg-white px-2 py-1 font-mono text-xs font-medium tabular-nums text-slate-700">
+                                                {{ $exception['short_key'] }}
+                                            </span>
+                                        </div>
 
-                                            <div class="min-w-0">
-                                                <p class="truncate text-sm font-semibold text-slate-900">{{ $exception['name'] }}</p>
-                                            </div>
+                                        <div class="min-w-0">
+                                            <p class="truncate text-sm font-semibold text-slate-950">{{ $exception['name'] }}</p>
+                                            <p class="mt-1 truncate text-sm text-slate-500">{{ $exception['message'] }}</p>
+                                        </div>
 
-                                            <div class="flex items-center lg:justify-end">
-                                                <p class="tabular-nums text-xs text-slate-500">{{ $exception['latest_at'] }}</p>
-                                            </div>
+                                        <div class="flex items-center lg:justify-end">
+                                            <p class="text-xs tabular-nums text-slate-500">{{ $exception['latest_at'] }}</p>
+                                        </div>
 
-                                            <div class="flex items-center lg:justify-center">
-                                                <span class="tabular-nums inline-flex min-w-12 items-center justify-center rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-sm font-semibold text-slate-700">
-                                                    {{ $exception['count'] }}
-                                                </span>
-                                            </div>
+                                        <div class="flex items-center lg:justify-center">
+                                            <span class="inline-flex min-w-9 items-center justify-center rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-sm font-semibold tabular-nums text-slate-700">
+                                                {{ number_format($exception['count']) }}
+                                            </span>
+                                        </div>
 
-                                            <div class="flex items-center lg:justify-center">
+                                        <div class="flex items-center gap-2 lg:contents">
+                                            <div class="flex lg:justify-center">
                                                 <button
                                                     type="button"
                                                     data-copy-label="Copy exception markdown"
                                                     onclick="copyButtonText(event, '{{ base64_encode($exception['copy_markdown']) }}')"
-                                                    class="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 transition duration-150 hover:border-sky-200 hover:text-sky-700"
+                                                    class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 transition-colors hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 disabled:cursor-not-allowed disabled:opacity-70"
                                                     aria-label="Copy exception markdown"
                                                     title="Copy exception markdown"
                                                 >
@@ -223,12 +239,12 @@
                                                 </button>
                                             </div>
 
-                                            <div class="flex items-center lg:justify-center">
+                                            <div class="flex lg:justify-center">
                                                 <button
                                                     type="button"
                                                     data-copy-label="Copy exception detail link"
                                                     onclick="copyButtonText(event, '{{ base64_encode($exception['detail_url']) }}')"
-                                                    class="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 transition duration-150 hover:border-sky-200 hover:text-sky-700"
+                                                    class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 transition-colors hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 disabled:cursor-not-allowed disabled:opacity-70"
                                                     aria-label="Copy exception detail link"
                                                     title="Copy exception detail link"
                                                 >
@@ -239,47 +255,50 @@
                                                 </button>
                                             </div>
                                         </div>
-                                    </summary>
+                                    </div>
+                                </summary>
 
-                                    <div class="bg-slate-50/80 px-4 pb-4 pt-1 sm:px-6 sm:pb-5">
-                                        <div class="grid gap-3 xl:grid-cols-[8rem,minmax(0,1.35fr),minmax(0,1fr),minmax(0,1fr)]">
-                                            <div class="rounded-2xl border border-slate-200 bg-white p-4">
-                                                <p class="text-[11px] uppercase tracking-[0.24em] text-slate-500">Method</p>
-                                                <p class="mt-3 text-sm font-semibold text-slate-900">{{ $exception['request_method'] }}</p>
-                                            </div>
-
-                                            <div class="rounded-2xl border border-slate-200 bg-white p-4">
-                                                <p class="text-[11px] uppercase tracking-[0.24em] text-slate-500">Endpoint</p>
-                                                <p class="mt-3 break-all text-sm leading-6 text-slate-700">{{ $exception['request_endpoint'] }}</p>
-                                            </div>
-
-                                            <div class="rounded-2xl border border-slate-200 bg-white p-4">
-                                                <p class="text-[11px] uppercase tracking-[0.24em] text-slate-500">Headers</p>
-                                                <pre class="mt-3 max-h-64 overflow-auto text-xs leading-6 text-slate-700">{{ $exception['request_headers'] }}</pre>
-                                            </div>
-
-                                            <div class="rounded-2xl border border-slate-200 bg-white p-4">
-                                                <p class="text-[11px] uppercase tracking-[0.24em] text-slate-500">Payload</p>
-                                                <pre class="mt-3 max-h-64 overflow-auto text-xs leading-6 text-slate-700">{{ $exception['request_payload'] }}</pre>
-                                            </div>
+                                <div class="min-w-0 overflow-hidden border-t border-slate-200 bg-slate-50/80 px-4 py-4 sm:px-6">
+                                    <div class="grid min-w-0 gap-4 rounded-md border border-slate-200 bg-white px-4 py-3 sm:grid-cols-[8rem,minmax(0,1fr)]">
+                                        <div class="min-w-0">
+                                            <h3 class="text-xs font-medium text-slate-500">Method</h3>
+                                            <p class="mt-1 text-sm font-semibold text-slate-950">{{ $exception['request_method'] }}</p>
                                         </div>
 
-                                        <div class="mt-3 rounded-2xl border border-slate-200 bg-white p-4">
-                                            <p class="text-[11px] uppercase tracking-[0.24em] text-slate-500">Location</p>
-                                            <p class="mt-3 break-all font-mono text-xs leading-6 text-slate-700">{{ $exception['location'] }}</p>
-                                        </div>
-
-                                        <div class="mt-3 rounded-2xl border border-slate-200 bg-white p-4">
-                                            <pre class="max-h-[36rem] overflow-auto whitespace-pre-wrap break-words text-xs leading-6 text-slate-700">{{ $exception['raw_exception'] }}</pre>
+                                        <div class="min-w-0">
+                                            <h3 class="text-xs font-medium text-slate-500">Endpoint</h3>
+                                            <p class="mt-1 break-all text-sm leading-6 text-slate-700">{{ $exception['request_endpoint'] }}</p>
                                         </div>
                                     </div>
-                                </details>
-                            @endforeach
-                        </div>
-                    @endif
-                </section>
-            </main>
-        </div>
+
+                                    <div class="mt-4 grid min-w-0 gap-4 xl:grid-cols-2">
+                                        <section class="min-w-0">
+                                            <h3 class="text-xs font-medium text-slate-500">Headers</h3>
+                                            <pre class="mt-2 max-h-64 min-w-0 overflow-auto whitespace-pre-wrap break-words rounded-md border border-slate-200 bg-white p-3 text-xs leading-6 text-slate-700">{{ $exception['request_headers'] }}</pre>
+                                        </section>
+
+                                        <section class="min-w-0">
+                                            <h3 class="text-xs font-medium text-slate-500">Payload</h3>
+                                            <pre class="mt-2 max-h-64 min-w-0 overflow-auto whitespace-pre-wrap break-words rounded-md border border-slate-200 bg-white p-3 text-xs leading-6 text-slate-700">{{ $exception['request_payload'] }}</pre>
+                                        </section>
+                                    </div>
+
+                                    <section class="mt-4 min-w-0">
+                                        <h3 class="text-xs font-medium text-slate-500">Location</h3>
+                                        <p class="mt-2 break-all rounded-md border border-slate-200 bg-white p-3 font-mono text-xs leading-6 text-slate-700">{{ $exception['location'] }}</p>
+                                    </section>
+
+                                    <section class="mt-4 min-w-0">
+                                        <h3 class="text-xs font-medium text-slate-500">Stack trace</h3>
+                                        <pre class="mt-2 max-h-[36rem] min-w-0 overflow-auto whitespace-pre-wrap break-words rounded-md bg-slate-950 p-4 text-xs leading-6 text-slate-100">{{ $exception['raw_exception'] }}</pre>
+                                    </section>
+                                </div>
+                            </details>
+                        @endforeach
+                    </div>
+                @endif
+            </section>
+        </main>
     </div>
 
     <script>
@@ -290,13 +309,8 @@
             return new TextDecoder().decode(bytes);
         }
 
-        async function copyButtonText(event, encodedText) {
-            event.preventDefault();
-            event.stopPropagation();
-
-            const button = event.currentTarget;
-            const defaultLabel = button.dataset.copyLabel || button.getAttribute('aria-label') || 'Copy';
-            const transientClasses = [
+        function setCopyState(button, state, label) {
+            const stateClasses = [
                 'border-emerald-200',
                 'bg-emerald-50',
                 'text-emerald-700',
@@ -305,43 +319,192 @@
                 'text-rose-700',
             ];
 
-            try {
-                await navigator.clipboard.writeText(decodeBase64Utf8(encodedText));
-                button.animate([
-                    { transform: 'scale(1)' },
-                    { transform: 'scale(0.92)' },
-                    { transform: 'scale(1)' },
-                ], {
-                    duration: 180,
-                    easing: 'ease-out',
-                });
-                button.classList.remove(...transientClasses);
+            button.classList.remove(...stateClasses);
+
+            if (state === 'success') {
                 button.classList.add('border-emerald-200', 'bg-emerald-50', 'text-emerald-700');
-                button.setAttribute('aria-label', 'Copied');
-                button.setAttribute('title', 'Copied');
-            } catch (error) {
-                button.animate([
-                    { transform: 'translateX(0)' },
-                    { transform: 'translateX(-2px)' },
-                    { transform: 'translateX(2px)' },
-                    { transform: 'translateX(0)' },
-                ], {
-                    duration: 180,
-                    easing: 'ease-out',
-                });
-                button.classList.remove(...transientClasses);
-                button.classList.add('border-rose-200', 'bg-rose-50', 'text-rose-700');
-                button.setAttribute('aria-label', 'Copy failed');
-                button.setAttribute('title', 'Copy failed');
             }
 
-            window.clearTimeout(button.copyResetTimer);
-            button.copyResetTimer = window.setTimeout(() => {
-                button.classList.remove(...transientClasses);
-                button.setAttribute('aria-label', defaultLabel);
-                button.setAttribute('title', defaultLabel);
-            }, 1200);
+            if (state === 'error') {
+                button.classList.add('border-rose-200', 'bg-rose-50', 'text-rose-700');
+            }
+
+            button.setAttribute('aria-label', label);
+            button.setAttribute('title', label);
         }
+
+        async function copyButtonText(event, encodedText) {
+            event.preventDefault();
+            event.stopPropagation();
+
+            const button = event.currentTarget;
+            const defaultLabel = button.dataset.copyLabel || button.getAttribute('aria-label') || 'Copy';
+
+            if (button.disabled) {
+                return;
+            }
+
+            button.disabled = true;
+
+            try {
+                await navigator.clipboard.writeText(decodeBase64Utf8(encodedText));
+                setCopyState(button, 'success', 'Copied');
+            } catch (error) {
+                setCopyState(button, 'error', 'Copy failed');
+            } finally {
+                window.clearTimeout(button.copyResetTimer);
+                button.copyResetTimer = window.setTimeout(() => {
+                    setCopyState(button, 'default', defaultLabel);
+                    button.disabled = false;
+                }, 1200);
+            }
+        }
+
+        function setupSourceNavScrollMemory() {
+            const nav = document.querySelector('[data-source-nav]');
+
+            if (!nav) {
+                return;
+            }
+
+            const storageKey = `exception-viewer:source-nav-scroll-left:${window.location.pathname}`;
+
+            const readScrollLeft = () => {
+                try {
+                    const value = window.sessionStorage.getItem(storageKey);
+
+                    return value === null ? null : Number(value);
+                } catch (error) {
+                    return null;
+                }
+            };
+
+            const writeScrollLeft = () => {
+                try {
+                    window.sessionStorage.setItem(storageKey, String(nav.scrollLeft));
+                } catch (error) {
+                    // Ignore storage failures so navigation still behaves like a normal link.
+                }
+            };
+
+            let activePointerId = null;
+            let startX = 0;
+            let startScrollLeft = 0;
+            let didDrag = false;
+            let suppressClick = false;
+            const dragThreshold = 4;
+
+            window.requestAnimationFrame(() => {
+                const scrollLeft = readScrollLeft();
+
+                if (Number.isFinite(scrollLeft)) {
+                    nav.scrollLeft = scrollLeft;
+
+                    return;
+                }
+
+                nav.querySelector('[aria-current="page"]')?.scrollIntoView({
+                    block: 'nearest',
+                    inline: 'nearest',
+                });
+            });
+
+            nav.addEventListener('scroll', writeScrollLeft, { passive: true });
+            nav.addEventListener('pointerdown', (event) => {
+                if (event.button !== 0) {
+                    return;
+                }
+
+                suppressClick = false;
+
+                if (nav.scrollWidth <= nav.clientWidth) {
+                    return;
+                }
+
+                activePointerId = event.pointerId;
+                startX = event.clientX;
+                startScrollLeft = nav.scrollLeft;
+                didDrag = false;
+            });
+            nav.addEventListener('pointermove', (event) => {
+                if (activePointerId !== event.pointerId) {
+                    return;
+                }
+
+                if ((event.buttons & 1) !== 1) {
+                    activePointerId = null;
+                    nav.classList.remove('is-dragging');
+
+                    return;
+                }
+
+                const deltaX = event.clientX - startX;
+
+                if (!didDrag && Math.abs(deltaX) < dragThreshold) {
+                    return;
+                }
+
+                if (!didDrag) {
+                    didDrag = true;
+                    nav.classList.add('is-dragging');
+                    nav.setPointerCapture?.(event.pointerId);
+                }
+
+                event.preventDefault();
+                nav.scrollLeft = startScrollLeft - deltaX;
+            });
+            nav.addEventListener('pointerup', (event) => {
+                if (activePointerId !== event.pointerId) {
+                    return;
+                }
+
+                if (nav.hasPointerCapture?.(event.pointerId)) {
+                    nav.releasePointerCapture(event.pointerId);
+                }
+
+                nav.classList.remove('is-dragging');
+                activePointerId = null;
+
+                if (didDrag) {
+                    suppressClick = true;
+                    writeScrollLeft();
+                    window.setTimeout(() => {
+                        suppressClick = false;
+                    }, 0);
+                }
+            });
+            nav.addEventListener('pointercancel', (event) => {
+                if (activePointerId !== event.pointerId) {
+                    return;
+                }
+
+                if (nav.hasPointerCapture?.(event.pointerId)) {
+                    nav.releasePointerCapture(event.pointerId);
+                }
+
+                nav.classList.remove('is-dragging');
+                activePointerId = null;
+                didDrag = false;
+            });
+            nav.addEventListener('dragstart', (event) => {
+                event.preventDefault();
+            });
+            nav.addEventListener('click', (event) => {
+                if (suppressClick) {
+                    suppressClick = false;
+                    event.preventDefault();
+                    event.stopPropagation();
+
+                    return;
+                }
+
+                if (event.target.closest('a[href]')) {
+                    writeScrollLeft();
+                }
+            });
+        }
+
+        setupSourceNavScrollMemory();
     </script>
 </body>
 </html>

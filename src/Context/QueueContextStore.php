@@ -50,6 +50,17 @@ class QueueContextStore
         return $resolvedContext;
     }
 
+    public function currentJobClass(): ?string
+    {
+        $frame = $this->currentFrame();
+
+        if ($frame === null) {
+            return null;
+        }
+
+        return $frame['job']->resolveQueuedJobClass();
+    }
+
     public function markException(Job $job, Throwable $throwable): void
     {
         $index = $this->findFrameIndex($job);
@@ -178,7 +189,6 @@ class QueueContextStore
                     continue;
                 }
 
-                $property->setAccessible(true);
                 $properties[$name] = $this->propertyValue($property, $object);
             }
         } while ($reflection = $reflection->getParentClass());

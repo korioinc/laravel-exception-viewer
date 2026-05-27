@@ -74,6 +74,10 @@ class ExceptionEntryFormatter
             $lines[] = '- Key: `'.$exception->key.'`';
         }
 
+        foreach ($this->sourceLines($exception) as $line) {
+            $lines[] = $line;
+        }
+
         $lines[] = '- Name: `'.$exception->name.'`';
         $lines[] = '- Message: '.$this->inlineValue($exception->message);
         $lines[] = '- File: `'.$exception->file.'`';
@@ -121,6 +125,20 @@ class ExceptionEntryFormatter
         }
 
         return $lines;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function sourceLines(object $exception): array
+    {
+        $sourceKey = $this->nullableInlineValue($exception->source_key ?? null);
+
+        if ($sourceKey === null) {
+            return [];
+        }
+
+        return ['- Source: `'.$sourceKey.'`'];
     }
 
     private function jsonBlock(string $title, ?string $value): array

@@ -14,8 +14,14 @@ use Korioinc\ExceptionViewer\Alarm\ExceptionAlarmHandler;
 use Korioinc\ExceptionViewer\Alarm\ExceptionAlarmNotifier;
 use Korioinc\ExceptionViewer\Context\QueueContextStore;
 use Korioinc\ExceptionViewer\Context\RequestContextResolver;
+use Korioinc\ExceptionViewer\Forwarding\ExceptionForwarder;
+use Korioinc\ExceptionViewer\Forwarding\ExceptionForwardingClient;
+use Korioinc\ExceptionViewer\Forwarding\ExceptionLogSnapshotBuilder;
+use Korioinc\ExceptionViewer\Receiver\CentralExceptionReceiver;
+use Korioinc\ExceptionViewer\Receiver\ExceptionReceiverAuthenticator;
 use Korioinc\ExceptionViewer\Recording\ExceptionFingerprint;
 use Korioinc\ExceptionViewer\Recording\ExceptionLogRecorder;
+use Korioinc\ExceptionViewer\Source\ExceptionSourceResolver;
 use Spatie\LaravelPackageTools\Package;
 use Spatie\LaravelPackageTools\PackageServiceProvider;
 use Throwable;
@@ -31,6 +37,7 @@ class ExceptionViewerServiceProvider extends PackageServiceProvider
             ->hasConfigFile()
             ->hasViews()
             ->hasRoute('web')
+            ->hasRoute('api')
             ->hasMigration('create_exception_logs_table');
     }
 
@@ -39,6 +46,12 @@ class ExceptionViewerServiceProvider extends PackageServiceProvider
         $this->app->singleton(ExceptionFingerprint::class);
         $this->app->singleton(QueueContextStore::class);
         $this->app->singleton(RequestContextResolver::class);
+        $this->app->singleton(ExceptionSourceResolver::class);
+        $this->app->singleton(ExceptionLogSnapshotBuilder::class);
+        $this->app->singleton(ExceptionForwardingClient::class);
+        $this->app->singleton(ExceptionForwarder::class);
+        $this->app->singleton(ExceptionReceiverAuthenticator::class);
+        $this->app->singleton(CentralExceptionReceiver::class);
         $this->app->singleton(ExceptionLogRecorder::class);
         $this->app->singleton(DiscordExceptionAlarmChannel::class);
         $this->app->tag([DiscordExceptionAlarmChannel::class], ExceptionAlarmChannel::class);

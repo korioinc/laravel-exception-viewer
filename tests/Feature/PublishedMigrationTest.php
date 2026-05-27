@@ -31,8 +31,23 @@ it('creates the exception logs table on the configured database connection when 
     try {
         $migration->up();
 
+        $sourceColumns = array_values(array_filter(
+            Schema::connection('exception_logs')->getColumnListing('exception_logs'),
+            static fn (string $column): bool => str_starts_with($column, 'source_'),
+        ));
+
         expect(Schema::connection('exception_logs')->hasTable('exception_logs'))->toBeTrue()
-            ->and(Schema::connection('migration_default')->hasTable('exception_logs'))->toBeFalse();
+            ->and(Schema::connection('migration_default')->hasTable('exception_logs'))->toBeFalse()
+            ->and(Schema::connection('exception_logs')->hasColumns('exception_logs', [
+                'source_key',
+                'received_at',
+            ]))->toBeTrue()
+            ->and(Schema::connection('exception_logs')->hasIndex('exception_logs', 'exception_logs_source_key_key_unique', 'unique'))->toBeTrue()
+            ->and(Schema::connection('exception_logs')->hasIndex('exception_logs', 'exception_logs_source_key_index'))->toBeTrue()
+            ->and(Schema::connection('exception_logs')->hasIndex('exception_logs', 'exception_logs_name_index'))->toBeTrue()
+            ->and(Schema::connection('exception_logs')->hasIndex('exception_logs', 'exception_logs_latest_at_index'))->toBeTrue()
+            ->and(Schema::connection('exception_logs')->hasIndex('exception_logs', 'exception_logs_count_index'))->toBeTrue()
+            ->and($sourceColumns)->toBe(['source_key']);
     } finally {
         Schema::connection('migration_default')->dropIfExists('exception_logs');
         Schema::connection('exception_logs')->dropIfExists('exception_logs');
