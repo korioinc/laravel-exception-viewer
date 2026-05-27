@@ -81,6 +81,27 @@ return [
     'enabled' => env('EL_ENABLED', true),
     'database_connection' => null,
 
+    'source' => [
+        'key' => env('EL_SOURCE_KEY', ''),
+    ],
+
+    'forwarding' => [
+        'enabled' => env('EL_FORWARDING_ENABLED', false),
+        'endpoint' => env('EL_FORWARDING_ENDPOINT', ''),
+        'api_key' => env('EL_FORWARDING_API_KEY', ''),
+        'queue' => env('EL_FORWARDING_QUEUE', null),
+        'timeout' => (float) env('EL_FORWARDING_TIMEOUT', 2),
+        'tries' => (int) env('EL_FORWARDING_TRIES', 3),
+        'backoff' => env('EL_FORWARDING_BACKOFF', 60),
+    ],
+
+    'receiver' => [
+        'enabled' => env('EL_RECEIVER_ENABLED', false),
+        'route_path' => env('EL_RECEIVER_ROUTE_PATH', 'exception-viewer/api/exceptions'),
+        'api_keys' => env('EL_RECEIVER_API_KEYS', ''),
+        'middleware' => [],
+    ],
+
     'alarm_enabled' => env('EL_ALARM_ENABLED', env('EL_ALARM_ENALBED', true)),
     'log_time_frame' => (int) env('EL_LOG_TIME_FRAME', 3),
     'log_per_time_frame' => (int) env('EL_LOG_PER_TIME_FRAME', 2),
@@ -113,6 +134,12 @@ Key options:
 
 - `enabled`: master switch for recording and alarm evaluation
 - `database_connection`: optional connection for `exception_logs`; `null` uses the app default, and the published migration uses this connection too
+- `source.key`: stable service identity used for central forwarding; required when forwarding is enabled
+- `forwarding.enabled`: stores locally first, then queues a central forwarding job when all forwarding settings are present
+- `forwarding.endpoint`, `forwarding.api_key`: central receiver URL and bearer token
+- `forwarding.queue`, `forwarding.timeout`, `forwarding.tries`, `forwarding.backoff`: queue and HTTP delivery controls
+- `receiver.enabled`: opens the central machine-to-machine receiver endpoint when true
+- `receiver.route_path`, `receiver.api_keys`, `receiver.middleware`: central route path, accepted bearer keys, and non-web middleware
 - `route_path`: viewer route prefix
 - `assets_path`: asset base path exposed to the Blade viewer
 - `middleware`: viewer route middleware stack; default is `['web', DenyInProduction::class]`
@@ -129,6 +156,8 @@ Only exceptions that reach Laravel's exception reporting flow are recorded.
 
 Stored columns:
 
+- `source_key`
+- `received_at`
 - `key`
 - `name`
 - `message`
@@ -150,7 +179,7 @@ Fingerprinting currently uses:
 - line
 - the first part of the stack trace
 
-Repeated exceptions increment `count` and refresh the latest exception text and context fields.
+Repeated local exceptions increment `count` and refresh the latest exception text and context fields. The central receiver stores aggregate snapshots by `source_key` plus `key`, so two services can report the same fingerprint key without overwriting each other.
 
 ## Captured Context
 
@@ -241,6 +270,79 @@ The single-exception endpoint returns a markdown document shaped like this:
 
 If request context is missing, the request-related sections are omitted entirely.
 
+Markdown output includes the source key when an exception row has one.
+
+## Central Receiver
+
+Install the package on every source service and on one central bridge service.
+
+Source services keep writing to their own `exception_logs` table. When
+forwarding is enabled, they also queue a snapshot to the central bridge.
+
+### Source Service
+
+Set these values on each service that sends exceptions:
+
+```env
+EL_SOURCE_KEY=service-a
+EL_FORWARDING_ENABLED=true
+EL_FORWARDING_ENDPOINT=https://central.example.com/exception-viewer/api/exceptions
+EL_FORWARDING_API_KEY=service-a-secret
+```
+
+`EL_SOURCE_KEY` is the source name shown in the central viewer. The central
+database stores this key only.
+
+`EL_FORWARDING_API_KEY` must be one of the keys configured on the central
+bridge service.
+
+Forwarding uses Laravel queues. Run your normal queue worker for the service.
+
+### Central Bridge Service
+
+Set these values on the service that receives forwarded exceptions:
+
+```env
+EL_RECEIVER_ENABLED=true
+EL_RECEIVER_API_KEYS=service-a-secret,service-b-secret
+```
+
+The receiver URL is:
+
+```text
+https://central.example.com/exception-viewer/api/exceptions
+```
+
+The source service sends `EL_FORWARDING_API_KEY` as a bearer token. The central
+bridge accepts it when it is listed in `EL_RECEIVER_API_KEYS`.
+
+View received exceptions at:
+
+```text
+https://central.example.com/exception-viewer
+```
+
+Receiver API:
+
+```text
+POST /exception-viewer/api/exceptions
+Authorization: Bearer <api-key>
+Content-Type: application/json
+Accept: application/json
+```
+
+Accepted payloads return `202` with `accepted`, `source_key`, `key`, and `count`. Missing or invalid API keys return `401`. Malformed payloads or unsupported payload versions return `422`. When receiver is disabled, the endpoint returns `404`.
+
+The central viewer shows per-source tabs and defaults to the local source. Markdown exports continue to work and include the source key for source-aware rows.
+
+Security notes:
+
+- Keep `EL_RECEIVER_API_KEYS` and `EL_FORWARDING_API_KEY` in secret storage.
+- Prefer one receiver key per source so a single service can be rotated independently.
+- Do not put the receiver route behind CSRF-only `web` middleware; it is a JSON machine-to-machine endpoint.
+- Protect the central viewer separately with application auth or internal access controls before using it in production.
+- Forwarding uses the already stored request context, so configured `request_context.masked_keys` apply before remote delivery.
+
 ## LLM Workflow
 
 The markdown endpoints are designed to work with `curl`, scripts, and LLM tools.
@@ -318,7 +420,7 @@ Example with the current defaults:
 
 ## Queue and Async Delivery
 
-Alarm dispatch always uses a queued job.
+Alarm dispatch and central forwarding both use queued jobs.
 
 If the host app uses:
 
@@ -326,7 +428,7 @@ If the host app uses:
 QUEUE_CONNECTION=sync
 ```
 
-the alarm job still runs in the same process.
+queued jobs still run in the same process.
 
 For real async delivery, use a non-`sync` queue such as:
 
@@ -346,7 +448,7 @@ or
 php artisan queue:work
 ```
 
-If you use Redis plus Horizon, Discord delivery happens in Horizon workers.
+If you use Redis plus Horizon, Discord delivery and central forwarding happen in Horizon workers.
 
 ## Publish Commands
 
@@ -369,6 +471,17 @@ php artisan vendor:publish --tag="exception-viewer-migrations"
 ```bash
 composer test
 ```
+
+## Local Development Data
+
+Refresh the Testbench database and seed representative exception rows:
+
+```bash
+composer dev:fresh
+composer dev:seed
+```
+
+The seeder inserts local HTTP, local queue, and forwarded source samples into `exception_logs`.
 
 ## Changelog
 

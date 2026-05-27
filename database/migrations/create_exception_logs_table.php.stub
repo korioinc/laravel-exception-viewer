@@ -10,7 +10,9 @@ return new class extends Migration
     {
         Schema::connection($this->connectionName())->create('exception_logs', function (Blueprint $table) {
             $table->id();
-            $table->string('key')->unique();
+            $table->string('source_key')->nullable();
+            $table->timestamp('received_at')->nullable();
+            $table->string('key');
             $table->string('name');
             $table->text('message');
             $table->text('file');
@@ -23,6 +25,12 @@ return new class extends Migration
             $table->unsignedBigInteger('count')->default(1);
             $table->timestamp('latest_at');
             $table->timestamps();
+
+            $table->unique(['source_key', 'key'], 'exception_logs_source_key_key_unique');
+            $table->index('source_key', 'exception_logs_source_key_index');
+            $table->index('name', 'exception_logs_name_index');
+            $table->index('latest_at', 'exception_logs_latest_at_index');
+            $table->index('count', 'exception_logs_count_index');
         });
     }
 

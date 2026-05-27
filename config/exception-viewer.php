@@ -27,6 +27,54 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Source Identity
+    |--------------------------------------------------------------------------
+    | Stable identity for the service writing or forwarding exceptions.
+    | `key` is required when outbound forwarding is enabled.
+    |
+    */
+
+    'source' => [
+        'key' => env('EL_SOURCE_KEY', ''),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Central Forwarding
+    |--------------------------------------------------------------------------
+    | When enabled, exceptions are still stored locally first and then a
+    | queued job forwards the stored snapshot to a central receiver endpoint.
+    |
+    */
+
+    'forwarding' => [
+        'enabled' => env('EL_FORWARDING_ENABLED', false),
+        'endpoint' => env('EL_FORWARDING_ENDPOINT', ''),
+        'api_key' => env('EL_FORWARDING_API_KEY', ''),
+        'queue' => env('EL_FORWARDING_QUEUE', null),
+        'timeout' => (float) env('EL_FORWARDING_TIMEOUT', 2),
+        'tries' => (int) env('EL_FORWARDING_TRIES', 3),
+        'backoff' => env('EL_FORWARDING_BACKOFF', 60),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Central Receiver API
+    |--------------------------------------------------------------------------
+    | Disabled by default. Configure accepted API keys as a comma-separated
+    | `EL_RECEIVER_API_KEYS` value or override this config with an array.
+    |
+    */
+
+    'receiver' => [
+        'enabled' => env('EL_RECEIVER_ENABLED', false),
+        'route_path' => env('EL_RECEIVER_ROUTE_PATH', 'exception-viewer/api/exceptions'),
+        'api_keys' => env('EL_RECEIVER_API_KEYS', ''),
+        'middleware' => [],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Alarm
     |--------------------------------------------------------------------------
     | Discord alarms are evaluated only for recorded exception events.

@@ -13,7 +13,9 @@ use Korioinc\ExceptionViewer\Alarm\ExceptionAlarmHandler;
 use Korioinc\ExceptionViewer\Alarm\ExceptionAlarmNotifier;
 use Korioinc\ExceptionViewer\Alarm\Jobs\SendExceptionAlarm;
 use Korioinc\ExceptionViewer\Context\QueueContextStore;
+use Korioinc\ExceptionViewer\Forwarding\Jobs\ForwardExceptionLog;
 use Korioinc\ExceptionViewer\Tests\Fakes\EncryptedThrowingQueuedJob;
+use Korioinc\ExceptionViewer\Tests\Fakes\NamedQueueJob;
 use Korioinc\ExceptionViewer\Tests\Fakes\NestedQueuedJob;
 use Korioinc\ExceptionViewer\Tests\Fakes\PayloadExplodingQueueJob;
 use Korioinc\ExceptionViewer\Tests\Fakes\ThrowingQueuedJob;
@@ -286,6 +288,75 @@ it('does not fail the application flow when storage fails or is disabled', funct
     report(aggregatedThrowable());
 
     expect(DB::table('exception_logs')->count())->toBe(0);
+});
+
+it('does not queue forwarding when forwarding is disabled', function () {
+    Queue::fake([ForwardExceptionLog::class]);
+
+    report(aggregatedThrowable());
+
+    Queue::assertNotPushed(ForwardExceptionLog::class);
+});
+
+it('queues forwarding for the persisted exception snapshot when configured', function () {
+    config()->set('exception-viewer.source.key', 'service-a');
+    config()->set('exception-viewer.forwarding.enabled', true);
+    config()->set('exception-viewer.forwarding.endpoint', 'https://central.test/exception-viewer/api/exceptions');
+    config()->set('exception-viewer.forwarding.api_key', 'secret-key');
+
+    Queue::fake([ForwardExceptionLog::class]);
+
+    report(aggregatedThrowable());
+
+    Queue::assertPushed(ForwardExceptionLog::class, function (ForwardExceptionLog $job) {
+        return $job->payload['version'] === 1
+            && $job->payload['source']['key'] === 'service-a'
+            && array_keys($job->payload['source']) === ['key']
+            && $job->payload['exception']['key'] === DB::table('exception_logs')->value('key')
+            && $job->payload['exception']['count'] === 1
+            && $job->payload['request']['headers'] === null;
+    });
+});
+
+it('skips forwarding when local persistence fails', function () {
+    config()->set('exception-viewer.database_connection', 'missing');
+    config()->set('exception-viewer.source.key', 'service-a');
+    config()->set('exception-viewer.forwarding.enabled', true);
+    config()->set('exception-viewer.forwarding.endpoint', 'https://central.test/exception-viewer/api/exceptions');
+    config()->set('exception-viewer.forwarding.api_key', 'secret-key');
+
+    Queue::fake([ForwardExceptionLog::class]);
+
+    expect(fn () => report(aggregatedThrowable()))->not->toThrow(Throwable::class);
+
+    Queue::assertNotPushed(ForwardExceptionLog::class);
+});
+
+it('records forwarding job failures without forwarding them again', function () {
+    config()->set('exception-viewer.source.key', 'service-a');
+    config()->set('exception-viewer.forwarding.enabled', true);
+    config()->set('exception-viewer.forwarding.endpoint', 'https://central.test/exception-viewer/api/exceptions');
+    config()->set('exception-viewer.forwarding.api_key', 'secret-key');
+
+    Queue::fake([ForwardExceptionLog::class]);
+
+    $store = app(QueueContextStore::class);
+    $store->capture(new NamedQueueJob(ForwardExceptionLog::class));
+
+    try {
+        report(new RuntimeException('Exception Viewer forwarding failed with HTTP 500.'));
+    } finally {
+        $store->clear();
+    }
+
+    Queue::assertNotPushed(ForwardExceptionLog::class);
+
+    $row = DB::table('exception_logs')->first();
+
+    expect($row)->not->toBeNull()
+        ->and($row->message)->toBe('Exception Viewer forwarding failed with HTTP 500.')
+        ->and($row->request_method)->toBe('JOB')
+        ->and($row->request_endpoint)->toBe(ForwardExceptionLog::class);
 });
 
 it('dispatches a discord alarm job even when storage fails', function () {

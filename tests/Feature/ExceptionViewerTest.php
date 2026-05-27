@@ -12,6 +12,8 @@ function insertExceptionLog(array $attributes): void
     $timestamp = Carbon::parse($attributes['latest_at'] ?? '2026-03-25 12:00:00');
 
     DB::table('exception_logs')->insert([
+        'source_key' => $attributes['source_key'] ?? 'local-app',
+        'received_at' => $attributes['received_at'] ?? null,
         'key' => $attributes['key'],
         'name' => $attributes['name'],
         'message' => $attributes['message'],
@@ -29,7 +31,7 @@ function insertExceptionLog(array $attributes): void
     ]);
 }
 
-it('renders grouped exception rows with expandable details', function () {
+it('renders exception rows with expandable details', function () {
     insertExceptionLog([
         'key' => '8f8f8f8f11111111111111111111111111111111111111111111111111111111',
         'name' => 'RuntimeException',
@@ -63,7 +65,6 @@ it('renders grouped exception rows with expandable details', function () {
     $response = $this->get('/exception-viewer');
     $response->assertOk()
         ->assertViewIs('exception-viewer::pages.index')
-        ->assertSee('All')
         ->assertSee('Exception Viewer')
         ->assertSee(strtoupper(app()->environment()))
         ->assertSee('RuntimeException')
@@ -71,7 +72,7 @@ it('renders grouped exception rows with expandable details', function () {
         ->assertSee('8f8f8f8f')
         ->assertSee('Copy')
         ->assertSee('Link')
-        ->assertSee('aria-label="Copy all exception export link"', false)
+        ->assertSee('aria-label="Copy source export link"', false)
         ->assertSee('aria-label="Copy exception markdown"', false)
         ->assertSee('aria-label="Copy exception detail link"', false)
         ->assertSee('rel="icon"', false)
@@ -84,40 +85,100 @@ it('renders grouped exception rows with expandable details', function () {
         ->assertSee('Runtime exploded');
 });
 
+it('defaults to the local source and switches sources through header tabs', function () {
+    insertExceptionLog([
+        'source_key' => 'local-app',
+        'key' => '33333333cccccccccccccccccccccccccccccccccccccccccccccccccccc',
+        'name' => 'LogicException',
+        'message' => 'Local app failed.',
+        'file' => '/var/www/app/LocalApp.php',
+        'line' => 5,
+        'raw_exception' => 'Local app failed',
+        'latest_at' => '2026-03-25 12:40:00',
+    ]);
+
+    insertExceptionLog([
+        'source_key' => 'service-a',
+        'key' => '11111111aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        'name' => 'RuntimeException',
+        'message' => 'Service A failed.',
+        'file' => '/var/www/app/ServiceA.php',
+        'line' => 10,
+        'raw_exception' => 'Service A failed',
+        'latest_at' => '2026-03-25 12:30:00',
+    ]);
+
+    insertExceptionLog([
+        'source_key' => 'service-b',
+        'key' => '22222222bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+        'name' => 'RuntimeException',
+        'message' => 'Service B failed.',
+        'file' => '/var/www/app/ServiceB.php',
+        'line' => 20,
+        'raw_exception' => 'Service B failed',
+        'latest_at' => '2026-03-25 12:20:00',
+    ]);
+
+    $response = $this->get('/exception-viewer');
+
+    $response->assertOk()
+        ->assertSee('Local App')
+        ->assertSee('SERVICE-A')
+        ->assertSee('SERVICE-B')
+        ->assertDontSee('>Service A<', false)
+        ->assertDontSee('>Service B<', false)
+        ->assertSee('href="'.route('exception-viewer.index').'"', false)
+        ->assertDontSee('source=local-app', false)
+        ->assertDontSee('All sources')
+        ->assertDontSee('Groups')
+        ->assertSee('/var/www/app/LocalApp.php:5')
+        ->assertDontSee('/var/www/app/ServiceA.php:10')
+        ->assertDontSee('/var/www/app/ServiceB.php:20');
+
+    $response = $this->get('/exception-viewer?source=service-a');
+
+    $response->assertOk()
+        ->assertSee('/var/www/app/ServiceA.php:10')
+        ->assertDontSee('/var/www/app/ServiceB.php:20');
+});
+
+it('returns local exception details by default when sources share a fingerprint', function () {
+    $key = 'abababab11111111111111111111111111111111111111111111111111111111';
+
+    insertExceptionLog([
+        'source_key' => 'local-app',
+        'key' => $key,
+        'name' => RuntimeException::class,
+        'message' => 'Local exception detail.',
+        'file' => '/var/www/app/LocalApp.php',
+        'line' => 10,
+        'raw_exception' => 'Local exception detail.',
+        'latest_at' => '2026-03-25 12:30:00',
+    ]);
+
+    insertExceptionLog([
+        'source_key' => 'service-a',
+        'key' => $key,
+        'name' => RuntimeException::class,
+        'message' => 'Remote exception detail.',
+        'file' => '/var/www/app/ServiceA.php',
+        'line' => 20,
+        'raw_exception' => 'Remote exception detail.',
+        'latest_at' => '2026-03-25 12:40:00',
+    ]);
+
+    $this->get('/exception-viewer/'.$key)
+        ->assertOk()
+        ->assertSee('Local exception detail.')
+        ->assertDontSee('Remote exception detail.');
+});
+
 it('blocks viewer access in production by default', function () {
     $this->app['env'] = 'production';
 
     $response = $this->get('/exception-viewer');
 
     $response->assertNotFound();
-});
-
-it('filters the list by selected exception group', function () {
-    insertExceptionLog([
-        'key' => 'aaaaaaaa11111111111111111111111111111111111111111111111111111111',
-        'name' => 'RuntimeException',
-        'message' => 'Runtime exploded while processing checkout.',
-        'file' => '/var/www/app/CheckoutService.php',
-        'line' => 184,
-        'raw_exception' => 'Runtime exploded',
-        'latest_at' => '2026-03-25 12:30:00',
-    ]);
-
-    insertExceptionLog([
-        'key' => 'bbbbbbbb22222222222222222222222222222222222222222222222222222222',
-        'name' => 'InvalidArgumentException',
-        'message' => 'Payload shape is invalid.',
-        'file' => '/var/www/app/PayloadValidator.php',
-        'line' => 88,
-        'raw_exception' => 'Payload shape is invalid',
-        'latest_at' => '2026-03-25 11:30:00',
-    ]);
-
-    $response = $this->get('/exception-viewer?group=RuntimeException');
-
-    $response->assertOk()
-        ->assertSee('/var/www/app/CheckoutService.php:184')
-        ->assertDontSee('/var/www/app/PayloadValidator.php:88');
 });
 
 it('sorts the list by count when requested', function () {
@@ -213,6 +274,7 @@ it('returns markdown that remains well-formed when exception content contains ba
     expect($response->getContent())->toBe(implode("\n", [
         '# Exception',
         '',
+        '- Source: `local-app`',
         '- Name: `RuntimeException`',
         '- Message: Backtick fence collision.',
         '- File: `/var/www/app/MarkdownService.php`',
@@ -291,6 +353,72 @@ it('returns all exceptions as markdown sections', function () {
         ->assertDontSee('- Key:')
         ->assertDontSee('- Count:')
         ->assertDontSee('- Latest At:');
+});
+
+it('returns source-filtered markdown sections', function () {
+    insertExceptionLog([
+        'source_key' => 'local-app',
+        'key' => str_repeat('1', 64),
+        'name' => 'RuntimeException',
+        'message' => 'Local app exception.',
+        'file' => '/var/www/local/App.php',
+        'line' => 10,
+        'raw_exception' => 'Local app context',
+        'latest_at' => '2026-03-25 12:40:00',
+    ]);
+
+    insertExceptionLog([
+        'source_key' => 'service-a',
+        'key' => str_repeat('a', 64),
+        'name' => 'RuntimeException',
+        'message' => 'Service A exception.',
+        'file' => '/var/www/service-a/App.php',
+        'line' => 11,
+        'raw_exception' => 'Service A context',
+        'latest_at' => '2026-03-25 12:30:00',
+    ]);
+
+    insertExceptionLog([
+        'source_key' => 'service-b',
+        'key' => str_repeat('b', 64),
+        'name' => 'RuntimeException',
+        'message' => 'Service B exception.',
+        'file' => '/var/www/service-b/App.php',
+        'line' => 22,
+        'raw_exception' => 'Service B context',
+        'latest_at' => '2026-03-25 12:20:00',
+    ]);
+
+    $this->get('/exception-viewer/all')
+        ->assertOk()
+        ->assertSee('Local app exception.')
+        ->assertDontSee('Service A exception.')
+        ->assertDontSee('Service B exception.');
+
+    $this->get('/exception-viewer/all?source=service-a')
+        ->assertOk()
+        ->assertSee('Service A exception.')
+        ->assertDontSee('Service B exception.');
+});
+
+it('includes source key in markdown exports', function () {
+    $key = str_repeat('c', 64);
+
+    insertExceptionLog([
+        'source_key' => 'service-a',
+        'received_at' => '2026-03-25 12:31:00',
+        'key' => $key,
+        'name' => 'RuntimeException',
+        'message' => 'Central row.',
+        'file' => '/var/www/app/Central.php',
+        'line' => 77,
+        'raw_exception' => 'Central row',
+        'latest_at' => '2026-03-25 12:30:00',
+    ]);
+
+    $this->get('/exception-viewer/'.$key.'?source=service-a')
+        ->assertOk()
+        ->assertSee('- Source: `service-a`');
 });
 
 it('omits request sections in the detail markdown when request context is missing', function () {

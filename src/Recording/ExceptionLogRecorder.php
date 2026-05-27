@@ -4,6 +4,8 @@ namespace Korioinc\ExceptionViewer\Recording;
 
 use Illuminate\Database\DatabaseManager;
 use Korioinc\ExceptionViewer\Context\RequestContextResolver;
+use Korioinc\ExceptionViewer\Forwarding\ExceptionForwarder;
+use Korioinc\ExceptionViewer\Source\ExceptionSourceResolver;
 use Monolog\Formatter\LineFormatter;
 use Monolog\Level;
 use Monolog\LogRecord;
@@ -17,6 +19,8 @@ class ExceptionLogRecorder
         private readonly DatabaseManager $database,
         private readonly ExceptionFingerprint $fingerprint,
         private readonly RequestContextResolver $requestContextResolver,
+        private readonly ExceptionSourceResolver $sourceResolver,
+        private readonly ExceptionForwarder $forwarder,
     ) {}
 
     public function record(Throwable $throwable): ?string
@@ -28,7 +32,8 @@ class ExceptionLogRecorder
         $fingerprintKey = $this->fingerprint->make($throwable);
 
         try {
-            $this->persist($throwable, $fingerprintKey);
+            $snapshot = $this->persist($throwable, $fingerprintKey);
+            $this->forwarder->queue($snapshot);
         } catch (Throwable) {
             // Recording must never interrupt Laravel's native exception flow.
         }
@@ -36,14 +41,17 @@ class ExceptionLogRecorder
         return $fingerprintKey;
     }
 
-    private function persist(Throwable $throwable, string $fingerprintKey): void
+    private function persist(Throwable $throwable, string $fingerprintKey): object
     {
         $connection = $this->databaseConnection();
         $table = $connection->table(self::TABLE);
         $timestamp = now();
         $requestContext = $this->requestContextResolver->resolve();
+        $sourceKey = $this->sourceResolver->localKey();
 
         $attributes = [
+            'source_key' => $sourceKey,
+            'received_at' => null,
             'key' => $fingerprintKey,
             'name' => $throwable::class,
             'message' => $throwable->getMessage(),
@@ -63,10 +71,11 @@ class ExceptionLogRecorder
         $inserted = $table->insertOrIgnore($attributes);
 
         if ($inserted !== 0) {
-            return;
+            return $this->findSnapshot($sourceKey, $fingerprintKey);
         }
 
         $table
+            ->where('source_key', $sourceKey)
             ->where('key', $attributes['key'])
             ->update([
                 'name' => $attributes['name'],
@@ -82,6 +91,17 @@ class ExceptionLogRecorder
                 'latest_at' => $timestamp,
                 'updated_at' => $timestamp,
             ]);
+
+        return $this->findSnapshot($sourceKey, $fingerprintKey);
+    }
+
+    private function findSnapshot(string $sourceKey, string $fingerprintKey): object
+    {
+        return $this->databaseConnection()
+            ->table(self::TABLE)
+            ->where('source_key', $sourceKey)
+            ->where('key', $fingerprintKey)
+            ->first();
     }
 
     private function databaseConnection()

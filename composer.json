@@ -45,13 +45,16 @@
     "autoload-dev": {
         "psr-4": {
             "Korioinc\\ExceptionViewer\\Tests\\": "tests/",
-            "Workbench\\App\\": "workbench/app/"
+            "Workbench\\App\\": "workbench/app/",
+            "Workbench\\Database\\Seeders\\": "workbench/database/seeders/"
         }
     },
     "scripts": {
         "post-autoload-dump": "@composer run prepare",
         "prepare": "@php vendor/bin/testbench package:discover --ansi",
         "analyse": "vendor/bin/phpstan analyse",
+        "dev:fresh": "@php vendor/bin/testbench migrate:fresh --ansi",
+        "dev:seed": "@php vendor/bin/testbench db:seed --class='Workbench\\Database\\Seeders\\DatabaseSeeder' --ansi",
         "test": "vendor/bin/pest",
         "test-coverage": "vendor/bin/pest --coverage",
         "format": "vendor/bin/pint"

@@ -25,5 +25,7 @@ it('registers a bundled publish tag for config and migrations only', function ()
 
     expect(ExceptionViewerServiceProvider::publishableGroups())->toContain('exception-viewer-install')
         ->and($bundle)->toBe(array_merge($config, $migrations))
-        ->and(array_keys($bundle))->not->toContain(...array_keys($views));
+        ->and(array_keys($bundle))->not->toContain(...array_keys($views))
+        ->and(array_keys($migrations))->toHaveCount(1)
+        ->and(array_key_first($migrations))->toEndWith('create_exception_logs_table.php.stub');
 });
