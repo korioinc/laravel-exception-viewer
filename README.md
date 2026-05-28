@@ -223,7 +223,7 @@ The viewer includes:
 - copy button for markdown output
 - link copy button for one exception
 - all-export copy button
-- purge action for clearing `exception_logs`
+- purge action for clearing the current source, plus a separate all-source clear action
 
 Markdown endpoints:
 

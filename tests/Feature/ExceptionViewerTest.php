@@ -75,6 +75,11 @@ it('renders exception rows with expandable details', function () {
         ->assertSee('aria-label="Copy source export link"', false)
         ->assertSee('aria-label="Copy exception markdown"', false)
         ->assertSee('aria-label="Copy exception detail link"', false)
+        ->assertSee('aria-label="Delete current source exception logs"', false)
+        ->assertSee('aria-label="Delete all exception logs"', false)
+        ->assertSee('name="source" value="local-app"', false)
+        ->assertSee('🚛')
+        ->assertDontSee('Clear all')
         ->assertSee('rel="icon"', false)
         ->assertSee('Location')
         ->assertSee('/var/www/app/CheckoutService.php:184')
@@ -449,24 +454,75 @@ it('omits request sections in the detail markdown when request context is missin
         ->assertDontSee('No HTTP request');
 });
 
-it('purges all exception logs from the viewer action', function () {
+it('purges exception logs for the selected source from the viewer action', function () {
     insertExceptionLog([
+        'source_key' => 'local-app',
         'key' => 'edededed11111111111111111111111111111111111111111111111111111111',
         'name' => 'RuntimeException',
-        'message' => 'Delete me.',
-        'file' => '/var/www/app/DeleteService.php',
+        'message' => 'Keep local.',
+        'file' => '/var/www/app/LocalDeleteService.php',
         'line' => 10,
-        'raw_exception' => 'Delete me',
+        'raw_exception' => 'Keep local',
         'latest_at' => '2026-03-25 12:30:00',
     ]);
 
     insertExceptionLog([
+        'source_key' => 'service-a',
         'key' => 'fefefefe22222222222222222222222222222222222222222222222222222222',
         'name' => 'InvalidArgumentException',
-        'message' => 'Delete me too.',
-        'file' => '/var/www/app/DeleteService.php',
+        'message' => 'Delete service A.',
+        'file' => '/var/www/app/ServiceADeleteService.php',
         'line' => 20,
-        'raw_exception' => 'Delete me too',
+        'raw_exception' => 'Delete service A',
+        'latest_at' => '2026-03-25 11:30:00',
+    ]);
+
+    insertExceptionLog([
+        'source_key' => 'service-b',
+        'key' => 'abababab33333333333333333333333333333333333333333333333333333333',
+        'name' => 'LogicException',
+        'message' => 'Keep service B.',
+        'file' => '/var/www/app/ServiceBDeleteService.php',
+        'line' => 30,
+        'raw_exception' => 'Keep service B',
+        'latest_at' => '2026-03-25 11:00:00',
+    ]);
+
+    $response = $this
+        ->withSession(['_token' => 'test-token'])
+        ->post('/exception-viewer/purge', [
+            '_token' => 'test-token',
+            'source' => 'service-a',
+            'redirect_to' => '/exception-viewer?source=service-a',
+        ]);
+
+    $response->assertRedirect('/exception-viewer?source=service-a');
+    expect(DB::table('exception_logs')->orderBy('source_key')->pluck('source_key')->all())->toBe([
+        'local-app',
+        'service-b',
+    ]);
+});
+
+it('purges all exception logs from the separate all-sources action', function () {
+    insertExceptionLog([
+        'source_key' => 'local-app',
+        'key' => 'acacacac11111111111111111111111111111111111111111111111111111111',
+        'name' => 'RuntimeException',
+        'message' => 'Delete local.',
+        'file' => '/var/www/app/LocalDeleteService.php',
+        'line' => 10,
+        'raw_exception' => 'Delete local',
+        'latest_at' => '2026-03-25 12:30:00',
+    ]);
+
+    insertExceptionLog([
+        'source_key' => 'service-a',
+        'key' => 'bcbcbcbc22222222222222222222222222222222222222222222222222222222',
+        'name' => 'InvalidArgumentException',
+        'message' => 'Delete service A.',
+        'file' => '/var/www/app/ServiceADeleteService.php',
+        'line' => 20,
+        'raw_exception' => 'Delete service A',
         'latest_at' => '2026-03-25 11:30:00',
     ]);
 
@@ -474,6 +530,7 @@ it('purges all exception logs from the viewer action', function () {
         ->withSession(['_token' => 'test-token'])
         ->post('/exception-viewer/purge', [
             '_token' => 'test-token',
+            'scope' => 'all',
             'redirect_to' => '/exception-viewer',
         ]);
 

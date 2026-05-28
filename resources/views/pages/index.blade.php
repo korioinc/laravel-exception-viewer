@@ -79,7 +79,8 @@
         $selectedSourceLabel = $selectedSource === null
             ? 'Local App'
             : ($sources->firstWhere('key', $selectedSource)['label'] ?? $selectedSource);
-        $selectedSourceIsLocal = $selectedSource === $localSourceKey;
+        $currentSourceKey = $selectedSource ?? $localSourceKey;
+        $selectedSourceIsLocal = $currentSourceKey === $localSourceKey;
         $exportFilters = array_filter([
             'source' => $selectedSourceIsLocal ? null : $selectedSource,
         ], static fn (mixed $value): bool => $value !== null && $value !== '');
@@ -136,19 +137,38 @@
                             <form
                                 method="POST"
                                 action="{{ route('exception-viewer.purge') }}"
-                                onsubmit="return confirm('Delete all exception logs?');"
+                                onsubmit="return confirm('Delete exception logs for the current source?');"
                             >
                                 @csrf
+                                <input type="hidden" name="source" value="{{ $currentSourceKey }}">
                                 <input type="hidden" name="redirect_to" value="{{ request()->getRequestUri() }}">
                                 <button
                                     type="submit"
                                     class="inline-flex h-9 w-9 items-center justify-center rounded-md border border-rose-200 bg-white text-rose-600 transition-colors hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-500"
-                                    aria-label="Delete all exception logs"
-                                    title="Delete all exception logs"
+                                    aria-label="Delete current source exception logs"
+                                    title="Delete {{ $selectedSourceLabel }} exception logs"
                                 >
                                     <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
                                         <path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.35 9m-4.78 0L9.26 9m9.97-3.21c.34.05.68.1 1.02.17m-1.02-.17L18.16 19.67A2.25 2.25 0 0 1 15.92 21.75H8.08a2.25 2.25 0 0 1-2.24-2.08L4.77 5.79m14.46 0a48.108 48.108 0 0 0-3.48-.4m-12 .4c.34-.07.68-.12 1.02-.17m0 0A48.11 48.11 0 0 1 8.25 5.4m7.5 0V4.5A2.25 2.25 0 0 0 13.5 2.25h-3A2.25 2.25 0 0 0 8.25 4.5v.9m7.5 0a48.667 48.667 0 0 0-7.5 0" />
                                     </svg>
+                                </button>
+                            </form>
+
+                            <form
+                                method="POST"
+                                action="{{ route('exception-viewer.purge') }}"
+                                onsubmit="return confirm('Delete all exception logs from every source?');"
+                            >
+                                @csrf
+                                <input type="hidden" name="scope" value="all">
+                                <input type="hidden" name="redirect_to" value="{{ request()->getRequestUri() }}">
+                                <button
+                                    type="submit"
+                                    class="inline-flex h-9 w-9 items-center justify-center rounded-md border border-rose-200 bg-rose-50 text-lg leading-none text-rose-700 transition-colors hover:border-rose-300 hover:bg-rose-100 hover:text-rose-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-500"
+                                    aria-label="Delete all exception logs"
+                                    title="Delete all exception logs"
+                                >
+                                    <span aria-hidden="true">🚛</span>
                                 </button>
                             </form>
                         </div>
