@@ -42,13 +42,15 @@ return [
     |--------------------------------------------------------------------------
     | Central Forwarding
     |--------------------------------------------------------------------------
-    | When enabled, exceptions are still stored locally first and then a
-    | queued job forwards the stored snapshot to a central receiver endpoint.
+    | When enabled, exceptions are still stored locally first and then forwarded
+    | to a central receiver. Use `sync` for immediate delivery or `queue` when
+    | the host service runs queue workers.
     |
     */
 
     'forwarding' => [
         'enabled' => env('EL_FORWARDING_ENABLED', false),
+        'mode' => env('EL_FORWARDING_MODE', 'sync'),
         'endpoint' => env('EL_FORWARDING_ENDPOINT', ''),
         'api_key' => env('EL_FORWARDING_API_KEY', ''),
         'queue' => env('EL_FORWARDING_QUEUE', null),
