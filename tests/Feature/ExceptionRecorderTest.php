@@ -301,6 +301,7 @@ it('does not queue forwarding when forwarding is disabled', function () {
 it('queues forwarding for the persisted exception snapshot when configured', function () {
     config()->set('exception-viewer.source.key', 'service-a');
     config()->set('exception-viewer.forwarding.enabled', true);
+    config()->set('exception-viewer.forwarding.mode', 'queue');
     config()->set('exception-viewer.forwarding.endpoint', 'https://central.test/api/exception-viewer/exceptions');
     config()->set('exception-viewer.forwarding.api_key', 'secret-key');
 
@@ -316,6 +317,54 @@ it('queues forwarding for the persisted exception snapshot when configured', fun
             && $job->payload['exception']['count'] === 1
             && $job->payload['request']['headers'] === null;
     });
+});
+
+it('sends forwarding synchronously by default when forwarding is configured', function () {
+    config()->set('exception-viewer.source.key', 'service-a');
+    config()->set('exception-viewer.forwarding.enabled', true);
+    config()->set('exception-viewer.forwarding.endpoint', 'https://central.test/api/exception-viewer/exceptions');
+    config()->set('exception-viewer.forwarding.api_key', 'secret-key');
+
+    Http::fake([
+        'central.test/*' => Http::response(['accepted' => true], 202),
+    ]);
+    Queue::fake([ForwardExceptionLog::class]);
+
+    report(aggregatedThrowable());
+
+    Queue::assertNotPushed(ForwardExceptionLog::class);
+    Http::assertSent(function ($request) {
+        $data = $request->data();
+
+        return $request->url() === 'https://central.test/api/exception-viewer/exceptions'
+            && $request->hasHeader('Authorization', 'Bearer secret-key')
+            && ($data['version'] ?? null) === 1
+            && ($data['source']['key'] ?? null) === 'service-a'
+            && ($data['exception']['key'] ?? null) === DB::table('exception_logs')->value('key');
+    });
+});
+
+it('sends forwarding synchronously when an older published config has no forwarding mode', function () {
+    config()->set('exception-viewer.source.key', 'service-a');
+    config()->set('exception-viewer.forwarding', [
+        'enabled' => true,
+        'endpoint' => 'https://central.test/api/exception-viewer/exceptions',
+        'api_key' => 'secret-key',
+        'queue' => null,
+        'timeout' => 2,
+        'tries' => 3,
+        'backoff' => 60,
+    ]);
+
+    Http::fake([
+        'central.test/*' => Http::response(['accepted' => true], 202),
+    ]);
+    Queue::fake([ForwardExceptionLog::class]);
+
+    report(aggregatedThrowable());
+
+    Queue::assertNotPushed(ForwardExceptionLog::class);
+    Http::assertSentCount(1);
 });
 
 it('skips forwarding when local persistence fails', function () {

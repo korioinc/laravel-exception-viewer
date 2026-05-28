@@ -87,6 +87,7 @@ return [
 
     'forwarding' => [
         'enabled' => env('EL_FORWARDING_ENABLED', false),
+        'mode' => env('EL_FORWARDING_MODE', 'sync'),
         'endpoint' => env('EL_FORWARDING_ENDPOINT', ''),
         'api_key' => env('EL_FORWARDING_API_KEY', ''),
         'queue' => env('EL_FORWARDING_QUEUE', null),
@@ -135,7 +136,8 @@ Key options:
 - `enabled`: master switch for recording and alarm evaluation
 - `database_connection`: optional connection for `exception_logs`; `null` uses the app default, and the published migration uses this connection too
 - `source.key`: stable service identity used for central forwarding; required when forwarding is enabled
-- `forwarding.enabled`: stores locally first, then queues a central forwarding job when all forwarding settings are present
+- `forwarding.enabled`: stores locally first, then forwards to the central receiver when all forwarding settings are present
+- `forwarding.mode`: `sync` sends the HTTP request during exception reporting, while `queue` dispatches a forwarding job
 - `forwarding.endpoint`, `forwarding.api_key`: central receiver URL and bearer token
 - `forwarding.queue`, `forwarding.timeout`, `forwarding.tries`, `forwarding.backoff`: queue and HTTP delivery controls
 - `receiver.enabled`: opens the central machine-to-machine receiver endpoint when true
@@ -277,7 +279,7 @@ Markdown output includes the source key when an exception row has one.
 Install the package on every source service and on one central bridge service.
 
 Source services keep writing to their own `exception_logs` table. When
-forwarding is enabled, they also queue a snapshot to the central bridge.
+forwarding is enabled, they also send a snapshot to the central bridge.
 
 ### Source Service
 
@@ -296,7 +298,16 @@ database stores this key only.
 `EL_FORWARDING_API_KEY` must be one of the keys configured on the central
 bridge service.
 
-Forwarding uses Laravel queues. Run your normal queue worker for the service.
+The default `EL_FORWARDING_MODE=sync` performs the central HTTP request
+immediately after local exception storage. Delivery failures are swallowed so
+Laravel's native exception flow is not interrupted, but they are not retried by
+the package.
+
+For services with queue workers, use asynchronous forwarding:
+
+```env
+EL_FORWARDING_MODE=queue
+```
 
 ### Central Bridge Service
 
@@ -420,7 +431,8 @@ Example with the current defaults:
 
 ## Queue and Async Delivery
 
-Alarm dispatch and central forwarding both use queued jobs.
+Alarm dispatch uses queued jobs. Central forwarding uses queued jobs when
+`EL_FORWARDING_MODE=queue` and sends inline when `EL_FORWARDING_MODE=sync`.
 
 If the host app uses:
 

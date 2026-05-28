@@ -14,6 +14,7 @@ class ExceptionForwarder
         private readonly ExceptionLogSnapshotBuilder $snapshotBuilder,
         private readonly ExceptionSourceResolver $sourceResolver,
         private readonly QueueContextStore $queueContextStore,
+        private readonly ExceptionForwardingClient $client,
     ) {}
 
     public function queue(object $exception): void
@@ -38,7 +39,15 @@ class ExceptionForwarder
             return;
         }
 
-        $job = new ForwardExceptionLog($this->snapshotBuilder->build($exception));
+        $payload = $this->snapshotBuilder->build($exception);
+
+        if ($this->mode() === 'sync') {
+            $this->client->send($payload);
+
+            return;
+        }
+
+        $job = new ForwardExceptionLog($payload);
         $queue = config('exception-viewer.forwarding.queue');
 
         if (is_string($queue) && trim($queue) !== '') {
@@ -56,5 +65,10 @@ class ExceptionForwarder
     private function apiKey(): string
     {
         return trim((string) config('exception-viewer.forwarding.api_key', ''));
+    }
+
+    private function mode(): string
+    {
+        return strtolower(trim((string) config('exception-viewer.forwarding.mode', 'sync')));
     }
 }
