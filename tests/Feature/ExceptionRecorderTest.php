@@ -301,7 +301,7 @@ it('does not queue forwarding when forwarding is disabled', function () {
 it('queues forwarding for the persisted exception snapshot when configured', function () {
     config()->set('exception-viewer.source.key', 'service-a');
     config()->set('exception-viewer.forwarding.enabled', true);
-    config()->set('exception-viewer.forwarding.endpoint', 'https://central.test/exception-viewer/api/exceptions');
+    config()->set('exception-viewer.forwarding.endpoint', 'https://central.test/api/exception-viewer/exceptions');
     config()->set('exception-viewer.forwarding.api_key', 'secret-key');
 
     Queue::fake([ForwardExceptionLog::class]);
@@ -322,7 +322,7 @@ it('skips forwarding when local persistence fails', function () {
     config()->set('exception-viewer.database_connection', 'missing');
     config()->set('exception-viewer.source.key', 'service-a');
     config()->set('exception-viewer.forwarding.enabled', true);
-    config()->set('exception-viewer.forwarding.endpoint', 'https://central.test/exception-viewer/api/exceptions');
+    config()->set('exception-viewer.forwarding.endpoint', 'https://central.test/api/exception-viewer/exceptions');
     config()->set('exception-viewer.forwarding.api_key', 'secret-key');
 
     Queue::fake([ForwardExceptionLog::class]);
@@ -335,7 +335,7 @@ it('skips forwarding when local persistence fails', function () {
 it('records forwarding job failures without forwarding them again', function () {
     config()->set('exception-viewer.source.key', 'service-a');
     config()->set('exception-viewer.forwarding.enabled', true);
-    config()->set('exception-viewer.forwarding.endpoint', 'https://central.test/exception-viewer/api/exceptions');
+    config()->set('exception-viewer.forwarding.endpoint', 'https://central.test/api/exception-viewer/exceptions');
     config()->set('exception-viewer.forwarding.api_key', 'secret-key');
 
     Queue::fake([ForwardExceptionLog::class]);

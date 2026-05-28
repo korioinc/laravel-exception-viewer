@@ -97,9 +97,9 @@ return [
 
     'receiver' => [
         'enabled' => env('EL_RECEIVER_ENABLED', false),
-        'route_path' => env('EL_RECEIVER_ROUTE_PATH', 'exception-viewer/api/exceptions'),
+        'route_path' => env('EL_RECEIVER_ROUTE_PATH', 'api/exception-viewer/exceptions'),
         'api_keys' => env('EL_RECEIVER_API_KEYS', ''),
-        'middleware' => [],
+        'middleware' => ['api'],
     ],
 
     'alarm_enabled' => env('EL_ALARM_ENABLED', env('EL_ALARM_ENALBED', true)),
@@ -139,7 +139,7 @@ Key options:
 - `forwarding.endpoint`, `forwarding.api_key`: central receiver URL and bearer token
 - `forwarding.queue`, `forwarding.timeout`, `forwarding.tries`, `forwarding.backoff`: queue and HTTP delivery controls
 - `receiver.enabled`: opens the central machine-to-machine receiver endpoint when true
-- `receiver.route_path`, `receiver.api_keys`, `receiver.middleware`: central route path, accepted bearer keys, and non-web middleware
+- `receiver.route_path`, `receiver.api_keys`, `receiver.middleware`: central route path, accepted bearer keys, and API middleware
 - `route_path`: viewer route prefix
 - `assets_path`: asset base path exposed to the Blade viewer
 - `middleware`: viewer route middleware stack; default is `['web', DenyInProduction::class]`
@@ -286,7 +286,7 @@ Set these values on each service that sends exceptions:
 ```env
 EL_SOURCE_KEY=service-a
 EL_FORWARDING_ENABLED=true
-EL_FORWARDING_ENDPOINT=https://central.example.com/exception-viewer/api/exceptions
+EL_FORWARDING_ENDPOINT=https://central.example.com/api/exception-viewer/exceptions
 EL_FORWARDING_API_KEY=service-a-secret
 ```
 
@@ -310,7 +310,7 @@ EL_RECEIVER_API_KEYS=service-a-secret,service-b-secret
 The receiver URL is:
 
 ```text
-https://central.example.com/exception-viewer/api/exceptions
+https://central.example.com/api/exception-viewer/exceptions
 ```
 
 The source service sends `EL_FORWARDING_API_KEY` as a bearer token. The central
@@ -325,7 +325,7 @@ https://central.example.com/exception-viewer
 Receiver API:
 
 ```text
-POST /exception-viewer/api/exceptions
+POST /api/exception-viewer/exceptions
 Authorization: Bearer <api-key>
 Content-Type: application/json
 Accept: application/json

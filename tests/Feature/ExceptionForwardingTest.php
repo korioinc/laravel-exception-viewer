@@ -6,7 +6,7 @@ use Korioinc\ExceptionViewer\Forwarding\Exceptions\ForwardingConfigurationExcept
 use Korioinc\ExceptionViewer\Forwarding\Jobs\ForwardExceptionLog;
 
 beforeEach(function () {
-    config()->set('exception-viewer.forwarding.endpoint', 'https://central.test/exception-viewer/api/exceptions');
+    config()->set('exception-viewer.forwarding.endpoint', 'https://central.test/api/exception-viewer/exceptions');
     config()->set('exception-viewer.forwarding.api_key', 'secret-key');
 });
 
@@ -47,7 +47,7 @@ it('sends the forwarding payload with bearer authentication', function () {
     Http::assertSent(function ($request) {
         $data = $request->data();
 
-        return $request->url() === 'https://central.test/exception-viewer/api/exceptions'
+        return $request->url() === 'https://central.test/api/exception-viewer/exceptions'
             && $request->hasHeader('Authorization', 'Bearer secret-key')
             && ($data['version'] ?? null) === 1
             && ($data['source']['key'] ?? null) === 'service-a'

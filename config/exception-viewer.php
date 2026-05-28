@@ -68,9 +68,9 @@ return [
 
     'receiver' => [
         'enabled' => env('EL_RECEIVER_ENABLED', false),
-        'route_path' => env('EL_RECEIVER_ROUTE_PATH', 'exception-viewer/api/exceptions'),
+        'route_path' => env('EL_RECEIVER_ROUTE_PATH', 'api/exception-viewer/exceptions'),
         'api_keys' => env('EL_RECEIVER_API_KEYS', ''),
-        'middleware' => [],
+        'middleware' => ['api'],
     ],
 
     /*

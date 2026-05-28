@@ -40,7 +40,7 @@ function enableReceiver(): void
 }
 
 it('returns not found when receiver is disabled', function () {
-    $this->postJson('/exception-viewer/api/exceptions', receiverPayload(), [
+    $this->postJson('/api/exception-viewer/exceptions', receiverPayload(), [
         'Authorization' => 'Bearer secret-key',
     ])->assertNotFound();
 });
@@ -50,7 +50,7 @@ it('rejects missing or invalid API keys', function (?string $authorization) {
 
     $headers = $authorization === null ? [] : ['Authorization' => $authorization];
 
-    $this->postJson('/exception-viewer/api/exceptions', receiverPayload(), $headers)
+    $this->postJson('/api/exception-viewer/exceptions', receiverPayload(), $headers)
         ->assertUnauthorized();
 
     expect(DB::table('exception_logs')->count())->toBe(0);
@@ -69,7 +69,7 @@ it('validates payload version and required fields', function () {
         ],
     ]);
 
-    $this->postJson('/exception-viewer/api/exceptions', $payload, [
+    $this->postJson('/api/exception-viewer/exceptions', $payload, [
         'Authorization' => 'Bearer secret-key',
     ])->assertUnprocessable();
 
@@ -86,7 +86,7 @@ it('rejects request context fields that are not valid json strings', function ()
         ],
     ]);
 
-    $this->postJson('/exception-viewer/api/exceptions', $payload, [
+    $this->postJson('/api/exception-viewer/exceptions', $payload, [
         'Authorization' => 'Bearer secret-key',
     ])->assertUnprocessable();
 
@@ -96,7 +96,7 @@ it('rejects request context fields that are not valid json strings', function ()
 it('inserts a valid remote exception with source key identity', function () {
     enableReceiver();
 
-    $this->postJson('/exception-viewer/api/exceptions', receiverPayload(), [
+    $this->postJson('/api/exception-viewer/exceptions', receiverPayload(), [
         'Authorization' => 'Bearer secret-key',
     ])
         ->assertAccepted()
@@ -115,8 +115,8 @@ it('replays snapshots idempotently without incrementing count', function () {
     enableReceiver();
     $payload = receiverPayload();
 
-    $this->postJson('/exception-viewer/api/exceptions', $payload, ['Authorization' => 'Bearer secret-key'])->assertAccepted();
-    $this->postJson('/exception-viewer/api/exceptions', $payload, ['Authorization' => 'Bearer secret-key'])->assertAccepted();
+    $this->postJson('/api/exception-viewer/exceptions', $payload, ['Authorization' => 'Bearer secret-key'])->assertAccepted();
+    $this->postJson('/api/exception-viewer/exceptions', $payload, ['Authorization' => 'Bearer secret-key'])->assertAccepted();
 
     expect(DB::table('exception_logs')->count())->toBe(1)
         ->and(DB::table('exception_logs')->value('count'))->toBe(7);
@@ -169,7 +169,7 @@ it('converges when another first delivery creates the row during insert', functi
     SQL);
 
     try {
-        $this->postJson('/exception-viewer/api/exceptions', receiverPayload([
+        $this->postJson('/api/exception-viewer/exceptions', receiverPayload([
             'source' => [
                 'key' => 'service-race',
             ],
@@ -192,7 +192,7 @@ it('converges when another first delivery creates the row during insert', functi
 it('preserves newer details when an older snapshot arrives later', function () {
     enableReceiver();
 
-    $this->postJson('/exception-viewer/api/exceptions', receiverPayload([
+    $this->postJson('/api/exception-viewer/exceptions', receiverPayload([
         'exception' => [
             'message' => 'Newest detail.',
             'count' => 10,
@@ -200,7 +200,7 @@ it('preserves newer details when an older snapshot arrives later', function () {
         ],
     ]), ['Authorization' => 'Bearer secret-key'])->assertAccepted();
 
-    $this->postJson('/exception-viewer/api/exceptions', receiverPayload([
+    $this->postJson('/api/exception-viewer/exceptions', receiverPayload([
         'exception' => [
             'message' => 'Older detail.',
             'count' => 12,
@@ -217,7 +217,7 @@ it('preserves newer details when an older snapshot arrives later', function () {
 it('does not regress stored details when an older same-second snapshot arrives later', function () {
     enableReceiver();
 
-    $this->postJson('/exception-viewer/api/exceptions', receiverPayload([
+    $this->postJson('/api/exception-viewer/exceptions', receiverPayload([
         'exception' => [
             'message' => 'Higher count detail.',
             'count' => 12,
@@ -225,7 +225,7 @@ it('does not regress stored details when an older same-second snapshot arrives l
         ],
     ]), ['Authorization' => 'Bearer secret-key'])->assertAccepted();
 
-    $this->postJson('/exception-viewer/api/exceptions', receiverPayload([
+    $this->postJson('/api/exception-viewer/exceptions', receiverPayload([
         'exception' => [
             'message' => 'Older same-second detail.',
             'count' => 10,
@@ -243,8 +243,8 @@ it('stores the same fingerprint key for different sources', function () {
     enableReceiver();
     $payload = receiverPayload();
 
-    $this->postJson('/exception-viewer/api/exceptions', $payload, ['Authorization' => 'Bearer secret-key'])->assertAccepted();
-    $this->postJson('/exception-viewer/api/exceptions', receiverPayload([
+    $this->postJson('/api/exception-viewer/exceptions', $payload, ['Authorization' => 'Bearer secret-key'])->assertAccepted();
+    $this->postJson('/api/exception-viewer/exceptions', receiverPayload([
         'source' => [
             'key' => 'service-b',
         ],
