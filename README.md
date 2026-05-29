@@ -13,6 +13,7 @@ Laravel Exception Viewer keeps Laravel's native exception reporting flow intact,
 - Provides a Blade viewer at `/exception-viewer`
 - Provides markdown export endpoints for one exception or all exceptions
 - Can dispatch Discord alarm jobs for repeated exceptions
+- Prunes exception logs whose latest occurrence is at least 14 days old
 
 ## Installation
 
@@ -182,6 +183,10 @@ Fingerprinting currently uses:
 - the first part of the stack trace
 
 Repeated local exceptions increment `count` and refresh the latest exception text and context fields. The central receiver stores aggregate snapshots by `source_key` plus `key`, so two services can report the same fingerprint key without overwriting each other.
+
+## Log Retention
+
+The package registers `exception-viewer:prune` with Laravel's scheduler. By default, the command runs daily and deletes `exception_logs` rows whose `latest_at` value is at least 14 days old.
 
 ## Captured Context
 

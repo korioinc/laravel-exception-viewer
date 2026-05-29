@@ -2,6 +2,7 @@
 
 namespace Korioinc\ExceptionViewer;
 
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Contracts\Bus\Dispatcher;
 use Illuminate\Queue\Events\JobExceptionOccurred;
 use Illuminate\Queue\Events\JobProcessed;
@@ -12,6 +13,7 @@ use Korioinc\ExceptionViewer\Alarm\Channels\DiscordExceptionAlarmChannel;
 use Korioinc\ExceptionViewer\Alarm\Contracts\ExceptionAlarmChannel;
 use Korioinc\ExceptionViewer\Alarm\ExceptionAlarmHandler;
 use Korioinc\ExceptionViewer\Alarm\ExceptionAlarmNotifier;
+use Korioinc\ExceptionViewer\Commands\PruneExceptionLogsCommand;
 use Korioinc\ExceptionViewer\Context\QueueContextStore;
 use Korioinc\ExceptionViewer\Context\RequestContextResolver;
 use Korioinc\ExceptionViewer\Forwarding\ExceptionForwarder;
@@ -38,6 +40,7 @@ class ExceptionViewerServiceProvider extends PackageServiceProvider
             ->hasViews()
             ->hasRoute('web')
             ->hasRoute('api')
+            ->hasCommand(PruneExceptionLogsCommand::class)
             ->hasMigration('create_exception_logs_table');
     }
 
@@ -75,6 +78,10 @@ class ExceptionViewerServiceProvider extends PackageServiceProvider
                 self::INSTALL_TAG,
             );
         }
+
+        $this->callAfterResolving(Schedule::class, function (Schedule $schedule): void {
+            $schedule->command(PruneExceptionLogsCommand::class)->daily();
+        });
 
         Queue::before(function (JobProcessing $event): void {
             $this->app->make(QueueContextStore::class)->capture($event->job);
