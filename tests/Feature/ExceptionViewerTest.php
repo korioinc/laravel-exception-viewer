@@ -12,7 +12,7 @@ function insertExceptionLog(array $attributes): void
     $timestamp = Carbon::parse($attributes['latest_at'] ?? '2026-03-25 12:00:00');
 
     DB::table('exception_logs')->insert([
-        'source_key' => $attributes['source_key'] ?? 'local-app',
+        'source_key' => array_key_exists('source_key', $attributes) ? $attributes['source_key'] : 'local-app',
         'received_at' => $attributes['received_at'] ?? null,
         'key' => $attributes['key'],
         'name' => $attributes['name'],
@@ -145,6 +145,174 @@ it('defaults to the local source and switches sources through header tabs', func
     $response->assertOk()
         ->assertSee('/var/www/app/ServiceA.php:10')
         ->assertDontSee('/var/www/app/ServiceB.php:20');
+});
+
+it('returns grouped exception summaries as JSON for automation clients', function () {
+    insertExceptionLog([
+        'source_key' => 'service-b',
+        'key' => '11111111bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+        'name' => 'RuntimeException',
+        'message' => 'Service B runtime detail must stay private.',
+        'file' => '/var/www/service-b/Runtime.php',
+        'line' => 10,
+        'raw_exception' => 'Service B stack trace',
+        'request_headers' => '{"authorization":"[MASKED]"}',
+        'request_payload' => '{"order_id":1}',
+        'count' => 4,
+        'latest_at' => '2026-03-25 12:20:00',
+    ]);
+
+    insertExceptionLog([
+        'source_key' => 'service-a',
+        'key' => '22222222aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        'name' => 'RuntimeException',
+        'message' => 'Older service A runtime detail.',
+        'file' => '/var/www/service-a/RuntimeOld.php',
+        'line' => 20,
+        'raw_exception' => 'Older service A stack trace',
+        'count' => 2,
+        'latest_at' => '2026-03-25 11:30:00',
+    ]);
+
+    insertExceptionLog([
+        'source_key' => 'service-a',
+        'key' => '33333333aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        'name' => 'RuntimeException',
+        'message' => 'Newer service A runtime detail.',
+        'file' => '/var/www/service-a/RuntimeNew.php',
+        'line' => 30,
+        'raw_exception' => 'Newer service A stack trace',
+        'count' => 5,
+        'latest_at' => '2026-03-25 12:30:00',
+    ]);
+
+    insertExceptionLog([
+        'source_key' => 'service-a',
+        'key' => '44444444aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        'name' => 'InvalidArgumentException',
+        'message' => 'Service A invalid argument detail.',
+        'file' => '/var/www/service-a/Invalid.php',
+        'line' => 40,
+        'raw_exception' => 'Service A invalid argument stack trace',
+        'count' => 7,
+        'latest_at' => '2026-03-25 12:30:00',
+    ]);
+
+    insertExceptionLog([
+        'source_key' => 'local-app',
+        'key' => '55555555cccccccccccccccccccccccccccccccccccccccccccccccccccc',
+        'name' => 'LogicException',
+        'message' => 'Local app detail.',
+        'file' => '/var/www/local/Logic.php',
+        'line' => 50,
+        'raw_exception' => 'Local app stack trace',
+        'count' => 1,
+        'latest_at' => '2026-03-25 12:10:00',
+    ]);
+
+    insertExceptionLog([
+        'source_key' => null,
+        'key' => '66666666cccccccccccccccccccccccccccccccccccccccccccccccccccc',
+        'name' => 'RuntimeException',
+        'message' => 'Legacy null source detail.',
+        'file' => '/var/www/local/Runtime.php',
+        'line' => 60,
+        'raw_exception' => 'Legacy null source stack trace',
+        'count' => 3,
+        'latest_at' => '2026-03-25 12:40:00',
+    ]);
+
+    insertExceptionLog([
+        'source_key' => '',
+        'key' => '77777777cccccccccccccccccccccccccccccccccccccccccccccccccccc',
+        'name' => 'RuntimeException',
+        'message' => 'Legacy empty source detail.',
+        'file' => '/var/www/local/RuntimeEmpty.php',
+        'line' => 70,
+        'raw_exception' => 'Legacy empty source stack trace',
+        'count' => 2,
+        'latest_at' => '2026-03-25 12:35:00',
+    ]);
+
+    $response = $this->getJson('/exception-viewer/json');
+
+    $response->assertOk()
+        ->assertHeader('Content-Type', 'application/json')
+        ->assertExactJson([
+            [
+                'name' => 'local-app',
+                'exceptions' => [
+                    [
+                        'name' => 'RuntimeException',
+                        'count' => 5,
+                        'latest_at' => '2026-03-25 12:40:00',
+                    ],
+                    [
+                        'name' => 'LogicException',
+                        'count' => 1,
+                        'latest_at' => '2026-03-25 12:10:00',
+                    ],
+                ],
+                'total_count' => 2,
+                'total_error_count' => 6,
+            ],
+            [
+                'name' => 'service-a',
+                'exceptions' => [
+                    [
+                        'name' => 'InvalidArgumentException',
+                        'count' => 7,
+                        'latest_at' => '2026-03-25 12:30:00',
+                    ],
+                    [
+                        'name' => 'RuntimeException',
+                        'count' => 7,
+                        'latest_at' => '2026-03-25 12:30:00',
+                    ],
+                ],
+                'total_count' => 2,
+                'total_error_count' => 14,
+            ],
+            [
+                'name' => 'service-b',
+                'exceptions' => [
+                    [
+                        'name' => 'RuntimeException',
+                        'count' => 4,
+                        'latest_at' => '2026-03-25 12:20:00',
+                    ],
+                ],
+                'total_count' => 1,
+                'total_error_count' => 4,
+            ],
+        ]);
+
+    expect($response->getContent())->not->toContain(
+        'key',
+        'message',
+        'file',
+        'line',
+        'request_headers',
+        'request_payload',
+        'raw_exception',
+        'detail_url',
+        'markdown',
+        '/var/www',
+        'stack trace',
+    );
+});
+
+it('returns an empty JSON summary when no exception logs exist', function () {
+    $this->get('/exception-viewer/json')
+        ->assertOk()
+        ->assertExactJson([]);
+});
+
+it('blocks summary JSON access in production by default', function () {
+    $this->app['env'] = 'production';
+
+    $this->getJson('/exception-viewer/json')
+        ->assertNotFound();
 });
 
 it('returns local exception details by default when sources share a fingerprint', function () {

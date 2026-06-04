@@ -239,6 +239,40 @@ Markdown endpoints:
 
 These endpoints return `text/markdown`.
 
+JSON summary endpoint:
+
+```text
+/exception-viewer/json
+```
+
+This endpoint returns `application/json` for automation and LLM clients. It uses the same viewer middleware as the Blade and markdown endpoints, including the default production `404`. The response exposes service keys and exception class names, so treat it as operationally sensitive and protect it with application authentication or an internal allowlist in shared environments.
+
+Example response:
+
+```json
+[
+  {
+    "name": "local-app",
+    "exceptions": [
+      {
+        "name": "RuntimeException",
+        "count": 7,
+        "latest_at": "2026-03-25 12:30:00"
+      },
+      {
+        "name": "InvalidArgumentException",
+        "count": 2,
+        "latest_at": "2026-03-25 11:30:00"
+      }
+    ],
+    "total_count": 2,
+    "total_error_count": 9
+  }
+]
+```
+
+`total_count` is the number of discovered exception summary items for that service. `total_error_count` is the sum of the exception item `count` values.
+
 ## Markdown Output
 
 The single-exception endpoint returns a markdown document shaped like this:
@@ -363,6 +397,12 @@ Security notes:
 
 The markdown endpoints are designed to work with `curl`, scripts, and LLM tools.
 
+Use the JSON summary when you want a compact service-by-service exception list:
+
+```text
+http://localhost/exception-viewer/json
+```
+
 Use all exceptions when you want broad triage:
 
 ```text
@@ -378,6 +418,10 @@ http://localhost/exception-viewer/629a80482b8e84f9412715b427b8a1d9db08845ba59071
 Example `curl` usage:
 
 ```bash
+curl http://localhost/exception-viewer/json
+```
+
+```bash
 curl http://localhost/exception-viewer/all
 ```
 
@@ -386,6 +430,13 @@ curl http://localhost/exception-viewer/629a80482b8e84f9412715b427b8a1d9db08845ba
 ```
 
 Example prompt for an LLM:
+
+```text
+Read this exception summary and identify which service and exception class need attention first:
+http://localhost/exception-viewer/json
+```
+
+For broad markdown triage:
 
 ```text
 Read this exception export and explain the root cause, likely blast radius, and the smallest safe fix:

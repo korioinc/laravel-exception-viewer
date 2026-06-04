@@ -5,6 +5,7 @@ use Korioinc\ExceptionViewer\Http\Controllers\ExceptionViewerAllController;
 use Korioinc\ExceptionViewer\Http\Controllers\ExceptionViewerIndexController;
 use Korioinc\ExceptionViewer\Http\Controllers\ExceptionViewerPurgeController;
 use Korioinc\ExceptionViewer\Http\Controllers\ExceptionViewerShowController;
+use Korioinc\ExceptionViewer\Http\Controllers\ExceptionViewerSummaryController;
 
 Route::middleware(config('exception-viewer.middleware', []))
     ->prefix(trim((string) config('exception-viewer.route_path', 'exception-viewer'), '/'))
@@ -17,6 +18,9 @@ Route::middleware(config('exception-viewer.middleware', []))
 
         Route::get('/all', ExceptionViewerAllController::class)
             ->name('exception-viewer.all');
+
+        Route::get('/json', ExceptionViewerSummaryController::class)
+            ->name('exception-viewer.summary');
 
         Route::get('/{key}', ExceptionViewerShowController::class)
             ->where('key', '[A-Fa-f0-9]{64}')
