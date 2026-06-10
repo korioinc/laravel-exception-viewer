@@ -111,17 +111,6 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Exception Digest
-    |--------------------------------------------------------------------------
-    | Discord webhook destination for table-formatted exception digest delivery.
-    | Host applications register and schedule the digest command explicitly.
-    |
-    */
-
-    'digest_discord_webhook_url' => env('EL_DIGEST_DISCORD_WEBHOOK_URL', ''),
-
-    /*
-    |--------------------------------------------------------------------------
     | Viewer Route
     |--------------------------------------------------------------------------
     | Route path, asset path, and middleware used by the Blade viewer.

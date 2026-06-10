@@ -13,7 +13,6 @@ Laravel Exception Viewer keeps Laravel's native exception reporting flow intact,
 - Provides a Blade viewer at `/exception-viewer`
 - Provides markdown export endpoints for one exception or all exceptions
 - Can dispatch Discord alarm jobs for repeated exceptions
-- Can send a manually scheduled Discord digest for new and recurring exceptions
 - Prunes exception logs whose latest occurrence is at least 14 days old
 
 ## Installation
@@ -114,8 +113,6 @@ return [
     'discord_webhook_url' => env('EL_DISCORD_WEBHOOK_URL', ''),
     'notification_title' => 'Log Alarm Notification',
 
-    'digest_discord_webhook_url' => env('EL_DIGEST_DISCORD_WEBHOOK_URL', ''),
-
     'route_path' => 'exception-viewer',
     'assets_path' => 'vendor/exception-viewer',
     'middleware' => [
@@ -154,7 +151,6 @@ Key options:
 - `request_context.enabled`: enables request or execution context capture
 - `request_context.masked_keys`: keys masked before headers or payload are stored; the default list is `authorization`, `x-api-key`, and `password`
 - `request_context.max_headers_size`, `request_context.max_payload_size`: optional truncation limits
-- `digest_discord_webhook_url`: optional Discord webhook used only by the digest command
 
 If you published `config/exception-viewer.php` before `source.label` was
 available, add the `source.label` key or republish the config before relying on
@@ -205,81 +201,6 @@ Repeated local exceptions increment `count` and refresh the latest exception tex
 ## Log Retention
 
 The package registers `exception-viewer:prune` with Laravel's scheduler. By default, the command runs daily and deletes `exception_logs` rows whose `latest_at` value is at least 14 days old.
-
-## Exception Digest
-
-The package provides `Korioinc\ExceptionViewer\Commands\ExceptionDigestDiscordCommand`, but it does not auto-register or auto-schedule this command. Register and schedule it in the host application when you want a periodic Discord summary.
-
-Supported env keys:
-
-```env
-EL_DIGEST_DISCORD_WEBHOOK_URL=
-```
-
-After registering the command class, run the command manually:
-
-```bash
-php artisan exception-viewer:discord-digest
-```
-
-When `EL_DIGEST_DISCORD_WEBHOOK_URL` is empty, the command sends no HTTP request and exits with failure. When the webhook is configured, the command sends the digest through Laravel's HTTP client and fails the command if Discord rejects any request. If the full digest exceeds Discord's 4096-character embed description limit, previous error details are omitted first so new errors stay visible. If the remaining digest is still too large, it is split across multiple Discord webhook requests.
-
-Register the command class in `bootstrap/app.php`:
-
-```php
-use Korioinc\ExceptionViewer\Commands\ExceptionDigestDiscordCommand;
-
-->withCommands([
-    ExceptionDigestDiscordCommand::class,
-])
-```
-
-Register the command in your host application's scheduler:
-
-```php
-use Illuminate\Support\Facades\Schedule;
-use Korioinc\ExceptionViewer\Commands\ExceptionDigestDiscordCommand;
-
-Schedule::command(ExceptionDigestDiscordCommand::class)
-    ->dailyAt('09:00');
-```
-
-Digest grouping:
-
-- `Previous Errors`: aggregate exception rows whose `created_at` date is before today
-- `New Errors`: aggregate exception rows whose `created_at` date is today
-
-The summary table shows source-level row counts only:
-
-```text
-Summary (2026-03-25 12:00:00)
-+------------+-------------+------------+
-| Name       | Prev errors | New errors |
-+------------+-------------+------------+
-| local-app  | 1           | 1          |
-| remote-app | 0           | 1          |
-+------------+-------------+------------+
-```
-
-The digest groups rows by `source_key`, so a receiver server can show exceptions from each reporting service separately. Inside each source block, `<` marks previous-date rows and `>` marks today rows:
-
-```text
-[local-app]
-< LogicException (3)
-----------------------
-> RuntimeException (1)
-----------------------
-
-[remote-app]
-< No previous errors.
-----------------------
-> RuntimeException (2)
-----------------------
-```
-
-Error rows are rendered as compact one-line items without exception messages so Discord does not break wide tables on narrow screens.
-
-The displayed `count` is the cumulative count stored on the exception fingerprint row. The digest excludes exception messages, raw stack traces, stored request headers, and stored request payloads, but exception class names and source keys may still be operationally sensitive. Send digest messages only to a private Discord channel.
 
 ## Captured Context
 
