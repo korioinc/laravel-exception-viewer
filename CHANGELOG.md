@@ -2,6 +2,10 @@
 
 All notable changes to `laravel-exception-viewer` will be documented in this file.
 
+## 1.0.8 - 2026-06-10
+
+**Full Changelog**: https://github.com/korioinc/laravel-exception-viewer/compare/1.0.7...1.0.8
+
 ## 1.0.7 - 2026-06-04
 
 **Full Changelog**: https://github.com/korioinc/laravel-exception-viewer/compare/1.0.6...1.0.7
