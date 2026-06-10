@@ -1,7 +1,10 @@
 <?php
 
+use Illuminate\Database\DatabaseManager;
+use Illuminate\Database\Query\Grammars\PostgresGrammar;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Korioinc\ExceptionViewer\Http\Controllers\ExceptionViewerSummaryController;
 
 beforeEach(function () {
     DB::table('exception_logs')->delete();
@@ -374,6 +377,30 @@ it('returns grouped exception summaries as JSON for automation clients', functio
         '/var/www',
         'stack trace',
     );
+});
+
+it('builds the JSON summary aggregate query without duplicate source fallback bindings for PostgreSQL', function () {
+    $connection = DB::connection();
+    $originalGrammar = $connection->getQueryGrammar();
+
+    $connection->setQueryGrammar(new PostgresGrammar($connection));
+
+    try {
+        $queries = $connection->pretend(function (): void {
+            app(ExceptionViewerSummaryController::class)(app(DatabaseManager::class));
+        });
+    } finally {
+        $connection->setQueryGrammar($originalGrammar);
+    }
+
+    $summaryQuery = collect($queries)->first(
+        fn (array $query): bool => str_contains((string) $query['query'], 'from "exception_logs"'),
+    );
+
+    expect($summaryQuery)->not->toBeNull()
+        ->and(collect($summaryQuery['bindings'])->filter(
+            fn (mixed $binding): bool => $binding === 'local-app',
+        )->count())->toBeLessThanOrEqual(1);
 });
 
 it('returns an empty JSON summary when no exception logs exist', function () {

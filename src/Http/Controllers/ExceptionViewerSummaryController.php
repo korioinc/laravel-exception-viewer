@@ -26,7 +26,7 @@ class ExceptionViewerSummaryController
             ->selectRaw($sourceExpression.' as service_name', [$localSourceKey])
             ->selectRaw('SUM(count) as exception_count')
             ->selectRaw('MAX(latest_at) as latest_at')
-            ->groupByRaw($sourceExpression, [$localSourceKey])
+            ->groupBy('service_name')
             ->groupBy('name')
             ->get();
 
