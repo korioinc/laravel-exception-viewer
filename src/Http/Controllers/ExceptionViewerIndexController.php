@@ -25,7 +25,7 @@ class ExceptionViewerIndexController
         /** @var view-string $view */
         $view = 'exception-viewer::pages.index';
         $localSourceKey = $this->sourceResolver->localKey();
-        $localSourceLabel = $this->sourceResolver->localLabel();
+        $localSourceLabel = strtoupper($this->sourceResolver->localLabel());
 
         $sources = $connection
             ->table(self::TABLE)

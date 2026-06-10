@@ -138,7 +138,7 @@ it('defaults to the local source and switches sources through header tabs', func
     $response = $this->get('/exception-viewer');
 
     $response->assertOk()
-        ->assertSee('Local App')
+        ->assertSee('LOCAL APP')
         ->assertSee('SERVICE-A')
         ->assertSee('SERVICE-B')
         ->assertDontSee('>Service A<', false)
@@ -158,7 +158,7 @@ it('defaults to the local source and switches sources through header tabs', func
         ->assertDontSee('/var/www/app/ServiceB.php:20');
 });
 
-it('renders the configured local source label without changing local source keys', function () {
+it('renders the configured local source label uppercased without changing local source keys', function () {
     config()->set('exception-viewer.source.label', 'API Server');
 
     insertExceptionLog([
@@ -186,9 +186,9 @@ it('renders the configured local source label without changing local source keys
     $response = $this->get('/exception-viewer');
 
     $response->assertOk()
-        ->assertSee('>API Server<', false)
+        ->assertSee('>API SERVER<', false)
         ->assertSee('SERVICE-A')
-        ->assertSee('title="Delete API Server exception logs"', false)
+        ->assertSee('title="Delete API SERVER exception logs"', false)
         ->assertSee('name="source" value="local-app"', false)
         ->assertSee('href="'.route('exception-viewer.index').'"', false)
         ->assertDontSee('source=local-app', false);
@@ -197,7 +197,7 @@ it('renders the configured local source label without changing local source keys
 
     $this->get('/exception-viewer')
         ->assertOk()
-        ->assertSee('API Server has no recorded exceptions yet.');
+        ->assertSee('API SERVER has no recorded exceptions yet.');
 });
 
 it('falls back to the default local source label when the configured label is blank', function () {
@@ -216,8 +216,8 @@ it('falls back to the default local source label when the configured label is bl
 
     $this->get('/exception-viewer')
         ->assertOk()
-        ->assertSee('Local App')
-        ->assertSee('title="Delete Local App exception logs"', false)
+        ->assertSee('LOCAL APP')
+        ->assertSee('title="Delete LOCAL APP exception logs"', false)
         ->assertSee('name="source" value="local-app"', false);
 });
 
