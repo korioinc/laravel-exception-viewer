@@ -11,6 +11,7 @@ class ExceptionEntryFormatter
     public function summarize(object $exception, int $index): array
     {
         return [
+            'id' => (int) $exception->id,
             'dom_id' => 'exception-'.($index + 1).'-'.Str::lower(substr($exception->key, 0, 8)),
             'key' => $exception->key,
             'short_key' => substr($exception->key, 0, 8),

@@ -77,7 +77,7 @@
             default => 'border-slate-200 bg-slate-50 text-slate-600',
         };
         $selectedSourceLabel = $selectedSource === null
-            ? 'Local App'
+            ? $localSourceLabel
             : ($sources->firstWhere('key', $selectedSource)['label'] ?? $selectedSource);
         $currentSourceKey = $selectedSource ?? $localSourceKey;
         $selectedSourceIsLocal = $currentSourceKey === $localSourceKey;
@@ -157,10 +157,13 @@
                             <form
                                 method="POST"
                                 action="{{ route('exception-viewer.purge') }}"
-                                onsubmit="return confirm('Delete all exception logs from every source?');"
+                                data-confirmation-token="{{ $allSourceConfirmation }}"
+                                data-confirmation-field="{{ $allSourceConfirmationField }}"
+                                onsubmit="return confirmAllSourcePurge(this);"
                             >
                                 @csrf
                                 <input type="hidden" name="scope" value="all">
+                                <input type="hidden" name="{{ $allSourceConfirmationField }}" value="">
                                 <input type="hidden" name="redirect_to" value="{{ request()->getRequestUri() }}">
                                 <button
                                     type="submit"
@@ -204,20 +207,21 @@
                         </div>
                     </div>
                 @else
-                    <div class="hidden border-b border-slate-200 bg-slate-50/90 px-4 py-2 text-xs font-medium text-slate-500 lg:grid lg:grid-cols-[8rem,minmax(0,1fr),11rem,4.5rem,3rem,3rem] lg:gap-4 lg:px-6">
+                    <div class="hidden border-b border-slate-200 bg-slate-50/90 px-4 py-2 text-xs font-medium text-slate-500 lg:grid lg:grid-cols-[8rem,minmax(0,1fr),11rem,4.5rem,3rem,3rem,3rem] lg:gap-4 lg:px-6">
                         <span>Key</span>
                         <span>Name</span>
                         <span class="text-right">Date</span>
                         <span class="text-center">Count</span>
                         <span class="text-center">Copy</span>
                         <span class="text-center">Link</span>
+                        <span class="text-center">Delete</span>
                     </div>
 
                     <div class="min-h-0 flex-1 overflow-x-hidden overflow-y-auto bg-slate-50">
                         @foreach ($exceptions as $exception)
                             <details id="{{ $exception['dom_id'] }}" class="group min-w-0 border-b border-slate-100 bg-white last:border-b-0">
                                 <summary class="list-none cursor-pointer px-4 py-3 transition-colors hover:bg-slate-50 group-open:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-sky-500 sm:px-6">
-                                    <div class="grid gap-3 lg:grid-cols-[8rem,minmax(0,1fr),11rem,4.5rem,3rem,3rem] lg:items-center lg:gap-4">
+                                    <div class="grid gap-3 lg:grid-cols-[8rem,minmax(0,1fr),11rem,4.5rem,3rem,3rem,3rem] lg:items-center lg:gap-4">
                                         <div class="flex items-center gap-2">
                                             <svg class="h-4 w-4 shrink-0 text-slate-400 transition-transform group-open:rotate-90 group-open:text-sky-700 motion-reduce:transition-none" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
                                                 <path fill-rule="evenodd" d="M7.28 4.97a.75.75 0 0 1 1.06.03l4.25 4.5a.75.75 0 0 1 0 1.03l-4.25 4.5a.75.75 0 1 1-1.09-1.02l3.76-3.98-3.76-3.98a.75.75 0 0 1 .03-1.08Z" clip-rule="evenodd" />
@@ -273,6 +277,31 @@
                                                     </svg>
                                                     <span class="sr-only">Copy exception detail link</span>
                                                 </button>
+                                            </div>
+
+                                            <div class="flex lg:justify-center">
+                                                <form method="POST" action="{{ $exception['delete_url'] }}">
+                                                    @csrf
+                                                    <input type="hidden" name="redirect_to" value="{{ request()->getRequestUri() }}">
+                                                    <button
+                                                        type="button"
+                                                        data-row-delete-button
+                                                        data-default-label="Delete exception row"
+                                                        data-confirm-label="Confirm delete exception row"
+                                                        onclick="handleRowDeleteClick(event)"
+                                                        class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-200 bg-white text-rose-600 transition-colors hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-500"
+                                                        aria-label="Delete exception row"
+                                                        title="Delete exception row"
+                                                    >
+                                                        <svg data-row-delete-trash-icon class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.35 9m-4.78 0L9.26 9m9.97-3.21c.34.05.68.1 1.02.17m-1.02-.17L18.16 19.67A2.25 2.25 0 0 1 15.92 21.75H8.08a2.25 2.25 0 0 1-2.24-2.08L4.77 5.79m14.46 0a48.108 48.108 0 0 0-3.48-.4m-12 .4c.34-.07.68-.12 1.02-.17m0 0A48.11 48.11 0 0 1 8.25 5.4m7.5 0V4.5A2.25 2.25 0 0 0 13.5 2.25h-3A2.25 2.25 0 0 0 8.25 4.5v.9m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+                                                        </svg>
+                                                        <svg data-row-delete-confirm-icon class="hidden h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" aria-hidden="true">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75 10 18.25 19.5 5.75" />
+                                                        </svg>
+                                                        <span data-row-delete-label class="sr-only">Delete exception row</span>
+                                                    </button>
+                                                </form>
                                             </div>
                                         </div>
                                     </div>
@@ -378,6 +407,104 @@
                     button.disabled = false;
                 }, 1200);
             }
+        }
+
+        let armedRowDeleteButton = null;
+
+        function setRowDeleteButtonState(button, armed) {
+            const defaultLabel = button.dataset.defaultLabel || 'Delete exception row';
+            const confirmLabel = button.dataset.confirmLabel || 'Confirm delete exception row';
+            const defaultClasses = [
+                'border-rose-200',
+                'bg-white',
+                'text-rose-600',
+                'hover:border-rose-300',
+                'hover:bg-rose-50',
+                'hover:text-rose-700',
+                'focus-visible:outline-rose-500',
+            ];
+            const confirmClasses = [
+                'border-emerald-200',
+                'bg-emerald-50',
+                'text-emerald-700',
+                'hover:border-emerald-300',
+                'hover:bg-emerald-100',
+                'hover:text-emerald-800',
+                'focus-visible:outline-emerald-500',
+            ];
+
+            button.classList.remove(...defaultClasses, ...confirmClasses);
+            button.classList.add(...(armed ? confirmClasses : defaultClasses));
+
+            const label = armed ? confirmLabel : defaultLabel;
+            const trashIcon = button.querySelector('[data-row-delete-trash-icon]');
+            const confirmIcon = button.querySelector('[data-row-delete-confirm-icon]');
+            const srLabel = button.querySelector('[data-row-delete-label]');
+
+            button.dataset.rowDeleteArmed = armed ? 'true' : 'false';
+            button.setAttribute('aria-label', label);
+            button.setAttribute('title', label);
+            trashIcon?.classList.toggle('hidden', armed);
+            confirmIcon?.classList.toggle('hidden', !armed);
+
+            if (srLabel) {
+                srLabel.textContent = label;
+            }
+        }
+
+        function resetRowDeleteButton(button) {
+            if (!button) {
+                return;
+            }
+
+            setRowDeleteButtonState(button, false);
+        }
+
+        function handleRowDeleteClick(event) {
+            event.preventDefault();
+            event.stopPropagation();
+
+            const button = event.currentTarget;
+            const form = button.closest('form');
+
+            if (!form) {
+                return;
+            }
+
+            if (button.dataset.rowDeleteArmed === 'true') {
+                if (typeof form.requestSubmit === 'function') {
+                    form.requestSubmit();
+                } else {
+                    form.submit();
+                }
+
+                return;
+            }
+
+            if (armedRowDeleteButton && armedRowDeleteButton !== button) {
+                resetRowDeleteButton(armedRowDeleteButton);
+            }
+
+            setRowDeleteButtonState(button, true);
+            armedRowDeleteButton = button;
+        }
+
+        function confirmAllSourcePurge(form) {
+            const token = form.dataset.confirmationToken || 'all';
+            const field = form.dataset.confirmationField || 'all_source_confirmation';
+            const confirmation = window.prompt(`Delete all exception logs from every source?\n\nType "${token}" to continue.`);
+
+            if (confirmation === null || confirmation.trim() !== token) {
+                return false;
+            }
+
+            const input = form.elements.namedItem(field);
+
+            if (input) {
+                input.value = token;
+            }
+
+            return true;
         }
 
         function setupSourceNavScrollMemory() {

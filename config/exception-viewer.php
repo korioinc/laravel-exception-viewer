@@ -29,13 +29,15 @@ return [
     |--------------------------------------------------------------------------
     | Source Identity
     |--------------------------------------------------------------------------
-    | Stable identity for the service writing or forwarding exceptions.
-    | `key` is required when outbound forwarding is enabled.
+    | Stable identity and local viewer label for this service.
+    | `key` is required when outbound forwarding is enabled. `label` is
+    | display-only and is used for the local source in the Blade viewer.
     |
     */
 
     'source' => [
         'key' => env('EL_SOURCE_KEY', ''),
+        'label' => env('EL_SOURCE_LABEL', 'Local App'),
     ],
 
     /*
@@ -106,6 +108,17 @@ return [
     | Embed title used for Discord alarm messages.
     */
     'notification_title' => 'Log Alarm Notification',
+
+    /*
+    |--------------------------------------------------------------------------
+    | Exception Digest
+    |--------------------------------------------------------------------------
+    | Discord webhook destination for table-formatted exception digest delivery.
+    | Host applications register and schedule the digest command explicitly.
+    |
+    */
+
+    'digest_discord_webhook_url' => env('EL_DIGEST_DISCORD_WEBHOOK_URL', ''),
 
     /*
     |--------------------------------------------------------------------------

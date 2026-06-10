@@ -7,11 +7,11 @@ beforeEach(function () {
     DB::table('exception_logs')->delete();
 });
 
-function insertExceptionLog(array $attributes): void
+function insertExceptionLog(array $attributes): int
 {
     $timestamp = Carbon::parse($attributes['latest_at'] ?? '2026-03-25 12:00:00');
 
-    DB::table('exception_logs')->insert([
+    return (int) DB::table('exception_logs')->insertGetId([
         'source_key' => array_key_exists('source_key', $attributes) ? $attributes['source_key'] : 'local-app',
         'received_at' => $attributes['received_at'] ?? null,
         'key' => $attributes['key'],
@@ -32,7 +32,7 @@ function insertExceptionLog(array $attributes): void
 }
 
 it('renders exception rows with expandable details', function () {
-    insertExceptionLog([
+    $firstRowId = insertExceptionLog([
         'key' => '8f8f8f8f11111111111111111111111111111111111111111111111111111111',
         'name' => 'RuntimeException',
         'message' => 'Runtime exploded while processing checkout.',
@@ -47,7 +47,7 @@ it('renders exception rows with expandable details', function () {
         'latest_at' => '2026-03-25 12:30:00',
     ]);
 
-    insertExceptionLog([
+    $secondRowId = insertExceptionLog([
         'key' => '9a9a9a9a22222222222222222222222222222222222222222222222222222222',
         'name' => 'InvalidArgumentException',
         'message' => 'Payload shape is invalid.',
@@ -72,12 +72,23 @@ it('renders exception rows with expandable details', function () {
         ->assertSee('8f8f8f8f')
         ->assertSee('Copy')
         ->assertSee('Link')
+        ->assertSee('Delete')
         ->assertSee('aria-label="Copy source export link"', false)
         ->assertSee('aria-label="Copy exception markdown"', false)
         ->assertSee('aria-label="Copy exception detail link"', false)
+        ->assertSee('aria-label="Delete exception row"', false)
+        ->assertSee('data-row-delete-button', false)
+        ->assertSee('data-confirm-label="Confirm delete exception row"', false)
+        ->assertSee('action="'.route('exception-viewer.delete', ['id' => $firstRowId]).'"', false)
+        ->assertSee('action="'.route('exception-viewer.delete', ['id' => $secondRowId]).'"', false)
+        ->assertSee('name="redirect_to" value="/exception-viewer"', false)
         ->assertSee('aria-label="Delete current source exception logs"', false)
         ->assertSee('aria-label="Delete all exception logs"', false)
         ->assertSee('name="source" value="local-app"', false)
+        ->assertSee('onsubmit="return confirmAllSourcePurge(this);"', false)
+        ->assertSee('data-confirmation-token="all"', false)
+        ->assertSee('data-confirmation-field="all_source_confirmation"', false)
+        ->assertSee('name="all_source_confirmation" value=""', false)
         ->assertSee('🚛')
         ->assertDontSee('Clear all')
         ->assertSee('rel="icon"', false)
@@ -145,6 +156,69 @@ it('defaults to the local source and switches sources through header tabs', func
     $response->assertOk()
         ->assertSee('/var/www/app/ServiceA.php:10')
         ->assertDontSee('/var/www/app/ServiceB.php:20');
+});
+
+it('renders the configured local source label without changing local source keys', function () {
+    config()->set('exception-viewer.source.label', 'API Server');
+
+    insertExceptionLog([
+        'source_key' => 'local-app',
+        'key' => '33333333cccccccccccccccccccccccccccccccccccccccccccccccccccc',
+        'name' => 'LogicException',
+        'message' => 'Primary runtime failed.',
+        'file' => '/var/www/app/PrimaryRuntime.php',
+        'line' => 5,
+        'raw_exception' => 'Primary runtime failed',
+        'latest_at' => '2026-03-25 12:40:00',
+    ]);
+
+    insertExceptionLog([
+        'source_key' => 'service-a',
+        'key' => '11111111aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        'name' => 'RuntimeException',
+        'message' => 'Service A failed.',
+        'file' => '/var/www/app/ServiceA.php',
+        'line' => 10,
+        'raw_exception' => 'Service A failed',
+        'latest_at' => '2026-03-25 12:30:00',
+    ]);
+
+    $response = $this->get('/exception-viewer');
+
+    $response->assertOk()
+        ->assertSee('>API Server<', false)
+        ->assertSee('SERVICE-A')
+        ->assertSee('title="Delete API Server exception logs"', false)
+        ->assertSee('name="source" value="local-app"', false)
+        ->assertSee('href="'.route('exception-viewer.index').'"', false)
+        ->assertDontSee('source=local-app', false);
+
+    DB::table('exception_logs')->delete();
+
+    $this->get('/exception-viewer')
+        ->assertOk()
+        ->assertSee('API Server has no recorded exceptions yet.');
+});
+
+it('falls back to the default local source label when the configured label is blank', function () {
+    config()->set('exception-viewer.source.label', '   ');
+
+    insertExceptionLog([
+        'source_key' => 'local-app',
+        'key' => '33333333cccccccccccccccccccccccccccccccccccccccccccccccccccc',
+        'name' => 'LogicException',
+        'message' => 'Primary runtime failed.',
+        'file' => '/var/www/app/PrimaryRuntime.php',
+        'line' => 5,
+        'raw_exception' => 'Primary runtime failed',
+        'latest_at' => '2026-03-25 12:40:00',
+    ]);
+
+    $this->get('/exception-viewer')
+        ->assertOk()
+        ->assertSee('Local App')
+        ->assertSee('title="Delete Local App exception logs"', false)
+        ->assertSee('name="source" value="local-app"', false);
 });
 
 it('returns grouped exception summaries as JSON for automation clients', function () {
@@ -622,6 +696,128 @@ it('omits request sections in the detail markdown when request context is missin
         ->assertDontSee('No HTTP request');
 });
 
+it('deletes only the requested exception row by id', function () {
+    $sharedKey = 'edededed11111111111111111111111111111111111111111111111111111111';
+
+    $deletedId = insertExceptionLog([
+        'source_key' => 'service-a',
+        'key' => $sharedKey,
+        'name' => 'RuntimeException',
+        'message' => 'Delete service A row.',
+        'file' => '/var/www/app/ServiceADeleteService.php',
+        'line' => 20,
+        'raw_exception' => 'Delete service A row',
+        'latest_at' => '2026-03-25 11:30:00',
+    ]);
+
+    $keptSameKeyId = insertExceptionLog([
+        'source_key' => 'service-b',
+        'key' => $sharedKey,
+        'name' => 'RuntimeException',
+        'message' => 'Keep service B row.',
+        'file' => '/var/www/app/ServiceBDeleteService.php',
+        'line' => 30,
+        'raw_exception' => 'Keep service B row',
+        'latest_at' => '2026-03-25 11:00:00',
+    ]);
+
+    $keptOtherId = insertExceptionLog([
+        'source_key' => 'local-app',
+        'key' => 'fefefefe22222222222222222222222222222222222222222222222222222222',
+        'name' => 'LogicException',
+        'message' => 'Keep local row.',
+        'file' => '/var/www/app/LocalKeepService.php',
+        'line' => 10,
+        'raw_exception' => 'Keep local row',
+        'latest_at' => '2026-03-25 12:30:00',
+    ]);
+
+    $response = $this
+        ->withSession(['_token' => 'test-token'])
+        ->post('/exception-viewer/entries/'.$deletedId.'/delete', [
+            '_token' => 'test-token',
+            'redirect_to' => '/exception-viewer?source=service-a&sort=count',
+        ]);
+
+    $response->assertRedirect('/exception-viewer?source=service-a&sort=count');
+    expect(DB::table('exception_logs')->pluck('id')->all())->toContain($keptSameKeyId, $keptOtherId)
+        ->not->toContain($deletedId);
+});
+
+it('redirects without deleting exception rows when the requested row id is stale', function () {
+    $keptId = insertExceptionLog([
+        'source_key' => 'local-app',
+        'key' => 'acacacac11111111111111111111111111111111111111111111111111111111',
+        'name' => 'RuntimeException',
+        'message' => 'Keep local row after stale delete.',
+        'file' => '/var/www/app/StaleDeleteService.php',
+        'line' => 10,
+        'raw_exception' => 'Keep local row after stale delete',
+        'latest_at' => '2026-03-25 12:30:00',
+    ]);
+
+    $response = $this
+        ->withSession(['_token' => 'test-token'])
+        ->post('/exception-viewer/entries/999999/delete', [
+            '_token' => 'test-token',
+            'redirect_to' => '/exception-viewer',
+        ]);
+
+    $response->assertRedirect('/exception-viewer');
+    expect(DB::table('exception_logs')->pluck('id')->all())->toBe([$keptId]);
+});
+
+it('falls back to the viewer index for unsafe row delete redirects', function (string $redirectTo) {
+    $deletedId = insertExceptionLog([
+        'source_key' => 'local-app',
+        'key' => hash('sha256', 'unsafe-row-delete-'.$redirectTo),
+        'name' => 'RuntimeException',
+        'message' => 'Delete local row with unsafe redirect.',
+        'file' => '/var/www/app/UnsafeRedirectDeleteService.php',
+        'line' => 10,
+        'raw_exception' => 'Delete local row with unsafe redirect',
+        'latest_at' => '2026-03-25 12:30:00',
+    ]);
+
+    $response = $this
+        ->withSession(['_token' => 'test-token'])
+        ->post('/exception-viewer/entries/'.$deletedId.'/delete', [
+            '_token' => 'test-token',
+            'redirect_to' => $redirectTo,
+        ]);
+
+    $response->assertRedirect(route('exception-viewer.index'));
+    expect(DB::table('exception_logs')->where('id', $deletedId)->exists())->toBeFalse();
+})->with([
+    'external URL' => ['https://example.com/exception-viewer'],
+    'protocol-relative URL' => ['//example.com/exception-viewer'],
+]);
+
+it('blocks row delete in production by default', function () {
+    $rowId = insertExceptionLog([
+        'source_key' => 'local-app',
+        'key' => 'bcbcbcbc11111111111111111111111111111111111111111111111111111111',
+        'name' => 'RuntimeException',
+        'message' => 'Keep local row in production.',
+        'file' => '/var/www/app/ProductionDeleteService.php',
+        'line' => 10,
+        'raw_exception' => 'Keep local row in production',
+        'latest_at' => '2026-03-25 12:30:00',
+    ]);
+
+    $this->app['env'] = 'production';
+
+    $this
+        ->withSession(['_token' => 'test-token'])
+        ->post('/exception-viewer/entries/'.$rowId.'/delete', [
+            '_token' => 'test-token',
+            'redirect_to' => '/exception-viewer',
+        ])
+        ->assertNotFound();
+
+    expect(DB::table('exception_logs')->where('id', $rowId)->exists())->toBeTrue();
+});
+
 it('purges exception logs for the selected source from the viewer action', function () {
     insertExceptionLog([
         'source_key' => 'local-app',
@@ -694,6 +890,100 @@ it('purges all exception logs from the separate all-sources action', function ()
         'latest_at' => '2026-03-25 11:30:00',
     ]);
 
+    insertExceptionLog([
+        'source_key' => null,
+        'key' => 'cdcdcdcd33333333333333333333333333333333333333333333333333333333',
+        'name' => 'LogicException',
+        'message' => 'Delete null source.',
+        'file' => '/var/www/app/NullSourceDeleteService.php',
+        'line' => 30,
+        'raw_exception' => 'Delete null source',
+        'latest_at' => '2026-03-25 11:00:00',
+    ]);
+
+    insertExceptionLog([
+        'source_key' => '',
+        'key' => 'dcdcdcdc44444444444444444444444444444444444444444444444444444444',
+        'name' => 'DomainException',
+        'message' => 'Delete empty source.',
+        'file' => '/var/www/app/EmptySourceDeleteService.php',
+        'line' => 40,
+        'raw_exception' => 'Delete empty source',
+        'latest_at' => '2026-03-25 10:30:00',
+    ]);
+
+    $response = $this
+        ->withSession(['_token' => 'test-token'])
+        ->post('/exception-viewer/purge', [
+            '_token' => 'test-token',
+            'scope' => 'all',
+            'all_source_confirmation' => 'all',
+            'redirect_to' => '/exception-viewer',
+        ]);
+
+    $response->assertRedirect('/exception-viewer');
+    expect(DB::table('exception_logs')->count())->toBe(0);
+});
+
+it('accepts surrounding whitespace around the all-source confirmation token', function () {
+    insertExceptionLog([
+        'source_key' => 'local-app',
+        'key' => 'eeeeeeee11111111111111111111111111111111111111111111111111111111',
+        'name' => 'RuntimeException',
+        'message' => 'Delete local with padded token.',
+        'file' => '/var/www/app/LocalPaddedTokenDeleteService.php',
+        'line' => 10,
+        'raw_exception' => 'Delete local with padded token',
+        'latest_at' => '2026-03-25 12:30:00',
+    ]);
+
+    insertExceptionLog([
+        'source_key' => 'service-a',
+        'key' => 'efefefef22222222222222222222222222222222222222222222222222222222',
+        'name' => 'InvalidArgumentException',
+        'message' => 'Delete service A with padded token.',
+        'file' => '/var/www/app/ServiceAPaddedTokenDeleteService.php',
+        'line' => 20,
+        'raw_exception' => 'Delete service A with padded token',
+        'latest_at' => '2026-03-25 11:30:00',
+    ]);
+
+    $response = $this
+        ->withSession(['_token' => 'test-token'])
+        ->post('/exception-viewer/purge', [
+            '_token' => 'test-token',
+            'scope' => 'all',
+            'all_source_confirmation' => ' all ',
+            'redirect_to' => '/exception-viewer',
+        ]);
+
+    $response->assertRedirect('/exception-viewer');
+    expect(DB::table('exception_logs')->count())->toBe(0);
+});
+
+it('does not purge all exception logs without the all-source confirmation token', function () {
+    insertExceptionLog([
+        'source_key' => 'local-app',
+        'key' => 'eaeaeaea11111111111111111111111111111111111111111111111111111111',
+        'name' => 'RuntimeException',
+        'message' => 'Keep local without token.',
+        'file' => '/var/www/app/LocalKeepService.php',
+        'line' => 10,
+        'raw_exception' => 'Keep local without token',
+        'latest_at' => '2026-03-25 12:30:00',
+    ]);
+
+    insertExceptionLog([
+        'source_key' => 'service-a',
+        'key' => 'ebebebeb22222222222222222222222222222222222222222222222222222222',
+        'name' => 'InvalidArgumentException',
+        'message' => 'Keep service A without token.',
+        'file' => '/var/www/app/ServiceAKeepService.php',
+        'line' => 20,
+        'raw_exception' => 'Keep service A without token',
+        'latest_at' => '2026-03-25 11:30:00',
+    ]);
+
     $response = $this
         ->withSession(['_token' => 'test-token'])
         ->post('/exception-viewer/purge', [
@@ -703,5 +993,45 @@ it('purges all exception logs from the separate all-sources action', function ()
         ]);
 
     $response->assertRedirect('/exception-viewer');
-    expect(DB::table('exception_logs')->count())->toBe(0);
+    expect(DB::table('exception_logs')->count())->toBe(2);
 });
+
+it('does not purge all exception logs with invalid all-source confirmation tokens', function (string $confirmation) {
+    insertExceptionLog([
+        'source_key' => 'local-app',
+        'key' => hash('sha256', 'local-app-'.$confirmation),
+        'name' => 'RuntimeException',
+        'message' => 'Keep local with invalid token.',
+        'file' => '/var/www/app/LocalInvalidTokenKeepService.php',
+        'line' => 10,
+        'raw_exception' => 'Keep local with invalid token',
+        'latest_at' => '2026-03-25 12:30:00',
+    ]);
+
+    insertExceptionLog([
+        'source_key' => 'service-a',
+        'key' => hash('sha256', 'service-a-'.$confirmation),
+        'name' => 'InvalidArgumentException',
+        'message' => 'Keep service A with invalid token.',
+        'file' => '/var/www/app/ServiceAInvalidTokenKeepService.php',
+        'line' => 20,
+        'raw_exception' => 'Keep service A with invalid token',
+        'latest_at' => '2026-03-25 11:30:00',
+    ]);
+
+    $response = $this
+        ->withSession(['_token' => 'test-token'])
+        ->post('/exception-viewer/purge', [
+            '_token' => 'test-token',
+            'scope' => 'all',
+            'all_source_confirmation' => $confirmation,
+            'redirect_to' => '/exception-viewer',
+        ]);
+
+    $response->assertRedirect('/exception-viewer');
+    expect(DB::table('exception_logs')->count())->toBe(2);
+})->with([
+    'empty token' => [''],
+    'wrong token' => ['delete'],
+    'wrong-case token' => ['ALL'],
+]);

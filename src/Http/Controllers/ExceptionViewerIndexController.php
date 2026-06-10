@@ -25,6 +25,7 @@ class ExceptionViewerIndexController
         /** @var view-string $view */
         $view = 'exception-viewer::pages.index';
         $localSourceKey = $this->sourceResolver->localKey();
+        $localSourceLabel = $this->sourceResolver->localLabel();
 
         $sources = $connection
             ->table(self::TABLE)
@@ -35,7 +36,7 @@ class ExceptionViewerIndexController
             ->get()
             ->map(fn (object $source): array => [
                 'key' => $source->source_key,
-                'label' => $this->sourceLabel((string) $source->source_key, $localSourceKey),
+                'label' => $this->sourceLabel((string) $source->source_key, $localSourceKey, $localSourceLabel),
                 'row_count' => (int) $source->row_count,
                 'is_local' => $source->source_key === $localSourceKey,
             ])
@@ -64,6 +65,9 @@ class ExceptionViewerIndexController
                     : ($exception->source_key ?? null);
 
                 return $this->formatter->summarize($exception, $index) + [
+                    'delete_url' => route('exception-viewer.delete', [
+                        'id' => $exception->id,
+                    ]),
                     'detail_url' => route('exception-viewer.show', array_filter([
                         'key' => $exception->key,
                         'source' => $source,
@@ -78,12 +82,15 @@ class ExceptionViewerIndexController
         return view($view, [
             'selectedSource' => $selectedSource,
             'localSourceKey' => $localSourceKey,
+            'localSourceLabel' => $localSourceLabel,
             'searchQuery' => '',
             'currentSort' => $currentSort,
             'sources' => $sources,
             'exceptions' => $exceptions,
             'totalRows' => $totalRowsQuery->count(),
             'assetsPathUrl' => asset(trim((string) config('exception-viewer.assets_path', 'vendor/exception-viewer'), '/')),
+            'allSourceConfirmation' => ExceptionViewerPurgeController::ALL_SOURCE_CONFIRMATION,
+            'allSourceConfirmationField' => ExceptionViewerPurgeController::ALL_SOURCE_CONFIRMATION_FIELD,
         ]);
     }
 
@@ -119,10 +126,10 @@ class ExceptionViewerIndexController
         };
     }
 
-    private function sourceLabel(string $sourceKey, string $localSourceKey): string
+    private function sourceLabel(string $sourceKey, string $localSourceKey, string $localSourceLabel): string
     {
         if ($sourceKey === $localSourceKey) {
-            return 'Local App';
+            return $localSourceLabel;
         }
 
         return strtoupper($sourceKey);

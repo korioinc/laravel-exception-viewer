@@ -13,6 +13,7 @@ Laravel Exception Viewer keeps Laravel's native exception reporting flow intact,
 - Provides a Blade viewer at `/exception-viewer`
 - Provides markdown export endpoints for one exception or all exceptions
 - Can dispatch Discord alarm jobs for repeated exceptions
+- Can send a manually scheduled Discord digest for new and recurring exceptions
 - Prunes exception logs whose latest occurrence is at least 14 days old
 
 ## Installation
@@ -84,6 +85,7 @@ return [
 
     'source' => [
         'key' => env('EL_SOURCE_KEY', ''),
+        'label' => env('EL_SOURCE_LABEL', 'Local App'),
     ],
 
     'forwarding' => [
@@ -112,6 +114,8 @@ return [
     'discord_webhook_url' => env('EL_DISCORD_WEBHOOK_URL', ''),
     'notification_title' => 'Log Alarm Notification',
 
+    'digest_discord_webhook_url' => env('EL_DIGEST_DISCORD_WEBHOOK_URL', ''),
+
     'route_path' => 'exception-viewer',
     'assets_path' => 'vendor/exception-viewer',
     'middleware' => [
@@ -136,7 +140,8 @@ Key options:
 
 - `enabled`: master switch for recording and alarm evaluation
 - `database_connection`: optional connection for `exception_logs`; `null` uses the app default, and the published migration uses this connection too
-- `source.key`: stable service identity used for central forwarding; required when forwarding is enabled
+- `source.key`: stable service identity used for local storage and central forwarding; required when forwarding is enabled
+- `source.label`: display-only label for the local source in the Blade viewer; defaults to `Local App`
 - `forwarding.enabled`: stores locally first, then forwards to the central receiver when all forwarding settings are present
 - `forwarding.mode`: `sync` sends the HTTP request during exception reporting, while `queue` dispatches a forwarding job
 - `forwarding.endpoint`, `forwarding.api_key`: central receiver URL and bearer token
@@ -149,6 +154,19 @@ Key options:
 - `request_context.enabled`: enables request or execution context capture
 - `request_context.masked_keys`: keys masked before headers or payload are stored; the default list is `authorization`, `x-api-key`, and `password`
 - `request_context.max_headers_size`, `request_context.max_payload_size`: optional truncation limits
+- `digest_discord_webhook_url`: optional Discord webhook used only by the digest command
+
+If you published `config/exception-viewer.php` before `source.label` was
+available, add the `source.label` key or republish the config before relying on
+`EL_SOURCE_LABEL`. Laravel merges published config arrays shallowly, so an older
+published `source` array can hide the package default.
+
+If you published the package views before `source.label`, the all-source purge
+confirmation, or row-level delete controls were added, update your published
+`resources/views/vendor/exception-viewer/pages/index.blade.php` copy or
+republish the view. Older published views may not include the
+`all_source_confirmation=all` field required by the clear-all action or the
+per-row delete forms required to delete individual exception rows after upgrade.
 
 Alarm delivery and cache failures are swallowed so the package never interrupts Laravel's native exception reporting flow.
 
@@ -187,6 +205,81 @@ Repeated local exceptions increment `count` and refresh the latest exception tex
 ## Log Retention
 
 The package registers `exception-viewer:prune` with Laravel's scheduler. By default, the command runs daily and deletes `exception_logs` rows whose `latest_at` value is at least 14 days old.
+
+## Exception Digest
+
+The package provides `Korioinc\ExceptionViewer\Commands\ExceptionDigestDiscordCommand`, but it does not auto-register or auto-schedule this command. Register and schedule it in the host application when you want a periodic Discord summary.
+
+Supported env keys:
+
+```env
+EL_DIGEST_DISCORD_WEBHOOK_URL=
+```
+
+After registering the command class, run the command manually:
+
+```bash
+php artisan exception-viewer:discord-digest
+```
+
+When `EL_DIGEST_DISCORD_WEBHOOK_URL` is empty, the command sends no HTTP request and exits with failure. When the webhook is configured, the command sends the digest through Laravel's HTTP client and fails the command if Discord rejects any request. If the full digest exceeds Discord's 4096-character embed description limit, previous error details are omitted first so new errors stay visible. If the remaining digest is still too large, it is split across multiple Discord webhook requests.
+
+Register the command class in `bootstrap/app.php`:
+
+```php
+use Korioinc\ExceptionViewer\Commands\ExceptionDigestDiscordCommand;
+
+->withCommands([
+    ExceptionDigestDiscordCommand::class,
+])
+```
+
+Register the command in your host application's scheduler:
+
+```php
+use Illuminate\Support\Facades\Schedule;
+use Korioinc\ExceptionViewer\Commands\ExceptionDigestDiscordCommand;
+
+Schedule::command(ExceptionDigestDiscordCommand::class)
+    ->dailyAt('09:00');
+```
+
+Digest grouping:
+
+- `Previous Errors`: aggregate exception rows whose `created_at` date is before today
+- `New Errors`: aggregate exception rows whose `created_at` date is today
+
+The summary table shows source-level row counts only:
+
+```text
+Summary (2026-03-25 12:00:00)
++------------+-------------+------------+
+| Name       | Prev errors | New errors |
++------------+-------------+------------+
+| local-app  | 1           | 1          |
+| remote-app | 0           | 1          |
++------------+-------------+------------+
+```
+
+The digest groups rows by `source_key`, so a receiver server can show exceptions from each reporting service separately. Inside each source block, `<` marks previous-date rows and `>` marks today rows:
+
+```text
+[local-app]
+< LogicException (3)
+----------------------
+> RuntimeException (1)
+----------------------
+
+[remote-app]
+< No previous errors.
+----------------------
+> RuntimeException (2)
+----------------------
+```
+
+Error rows are rendered as compact one-line items without exception messages so Discord does not break wide tables on narrow screens.
+
+The displayed `count` is the cumulative count stored on the exception fingerprint row. The digest excludes exception messages, raw stack traces, stored request headers, and stored request payloads, but exception class names and source keys may still be operationally sensitive. Send digest messages only to a private Discord channel.
 
 ## Captured Context
 
@@ -227,8 +320,9 @@ The viewer includes:
 - expandable detail rows
 - copy button for markdown output
 - link copy button for one exception
+- row-level delete button that requires a second click on the check icon before deleting one exception row
 - all-export copy button
-- purge action for clearing the current source, plus a separate all-source clear action
+- purge action for clearing the current source, plus a separate all-source clear action that requires typing `all` to confirm
 
 Markdown endpoints:
 
@@ -326,13 +420,17 @@ Set these values on each service that sends exceptions:
 
 ```env
 EL_SOURCE_KEY=service-a
+EL_SOURCE_LABEL="Service A"
 EL_FORWARDING_ENABLED=true
 EL_FORWARDING_ENDPOINT=https://central.example.com/api/exception-viewer/exceptions
 EL_FORWARDING_API_KEY=service-a-secret
 ```
 
-`EL_SOURCE_KEY` is the source name shown in the central viewer. The central
-database stores this key only.
+`EL_SOURCE_KEY` is the stable source identity stored locally and sent to the
+central receiver. The central database stores this key only.
+
+`EL_SOURCE_LABEL` is an optional display-only label for the source service's own
+Blade viewer. It does not change forwarded payloads or central storage.
 
 `EL_FORWARDING_API_KEY` must be one of the keys configured on the central
 bridge service.

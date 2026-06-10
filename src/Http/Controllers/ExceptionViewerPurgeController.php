@@ -9,6 +9,10 @@ use Korioinc\ExceptionViewer\Source\ExceptionSourceResolver;
 
 class ExceptionViewerPurgeController
 {
+    public const ALL_SOURCE_CONFIRMATION = 'all';
+
+    public const ALL_SOURCE_CONFIRMATION_FIELD = 'all_source_confirmation';
+
     private const TABLE = 'exception_logs';
 
     public function __construct(
@@ -20,6 +24,10 @@ class ExceptionViewerPurgeController
         $connection = $this->databaseConnection($database);
 
         if ((string) $request->input('scope', 'source') === 'all') {
+            if (! $this->hasValidAllSourceConfirmation($request)) {
+                return redirect($this->resolveRedirectPath((string) $request->input('redirect_to', '')));
+            }
+
             $connection->table(self::TABLE)->delete();
         } else {
             $source = $this->resolveSource((string) $request->input('source', ''));
@@ -31,6 +39,14 @@ class ExceptionViewerPurgeController
         }
 
         return redirect($this->resolveRedirectPath((string) $request->input('redirect_to', '')));
+    }
+
+    private function hasValidAllSourceConfirmation(Request $request): bool
+    {
+        $confirmation = $request->input(self::ALL_SOURCE_CONFIRMATION_FIELD);
+
+        return is_string($confirmation)
+            && trim($confirmation) === self::ALL_SOURCE_CONFIRMATION;
     }
 
     private function databaseConnection(DatabaseManager $database)
